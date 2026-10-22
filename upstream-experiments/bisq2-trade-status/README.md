@@ -1,14 +1,16 @@
 # Bisq 2 fork-first trade-state experiment
 
-This is a **research patch** to the Bisq 2 API, deliberately staged in
-Bisq-Agent-Network (BAN) until a personal fork of bisq-network/bisq2 is
-available. It is *not* a Bisq 2 release and does not run against mainnet.
+This is a **research patch** to the Bisq 2 API, staged in
+Bisq-Agent-Network (BAN) and now applied to [the personal Bisq 2 fork](https://github.com/patrickdugan/bisq2/pull/1).
+It is *not* a Bisq 2 release and does not run against mainnet.
 
 Upstream baseline (pinned): `7767b8b3196b9e8be0a1413c2237f4f595b86cc0`
 (October 21, 2026).
 Upstream repository: https://github.com/bisq-network/bisq2
 
 Patch: [0001-read-only-trade-status.patch](0001-read-only-trade-status.patch)
+Verified fork branch: https://github.com/patrickdugan/bisq2/tree/experiment/agent-trade-state-recovery
+Upstream contribution compare: https://github.com/bisq-network/bisq2/compare/main...patrickdugan:bisq2:experiment/agent-trade-state-recovery?expand=1
 
 ## Intent
 
@@ -61,7 +63,8 @@ grant enforcement and client-pairing compatibility.
 
 An [experimental GitHub Actions workflow](../../.github/workflows/bisq2-upstream-experiment.yml)
 checks out the exact upstream commit, applies this patch on a disposable CI
-checkout, runs `git diff --check`, and attempts the targeted Java API test.
+checkout, runs `git diff --check`, and executes the targeted Java API test.
+The [targeted Java test passed](https://github.com/patrickdugan/Bisq-Agent-Network/actions/runs/39761101957), as did the [BAN Python tests](https://github.com/patrickdugan/Bisq-Agent-Network/actions/runs/39761238803).
 
 To reproduce in a **personal fork**:
 
@@ -75,8 +78,10 @@ git apply ../Bisq-Agent-Network/upstream-experiments/bisq2-trade-status/0001-rea
 git diff --check
 ```
 
-Do not send an upstream PR until the fork's CI and API compatibility review
-pass. Nothing here changes the existing Bisq main branch.
+Upstream review is the next step. The connected GitHub integration could not
+create the cross-fork PR (HTTP 403); use the upstream compare link above. This
+is still a proposal subject to maintainer review, not a merged Bisq feature.
+Nothing here changes the existing Bisq main branch.
 
 ## Proposed follow-up PR after verifying the experiment
 
