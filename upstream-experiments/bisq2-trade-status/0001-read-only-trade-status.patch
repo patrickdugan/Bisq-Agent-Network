@@ -1,0 +1,254 @@
+diff --git a/api/src/main/java/bisq/api/rest_api/endpoints/trades/TradeRestApi.java b/api/src/main/java/bisq/api/rest_api/endpoints/trades/TradeRestApi.java
+--- a/api/src/main/java/bisq/api/rest_api/endpoints/trades/TradeRestApi.java
++++ b/api/src/main/java/bisq/api/rest_api/endpoints/trades/TradeRestApi.java
+@@ -125,9 +125,38 @@
+         bisqEasyTradeService = tradeService.getBisqEasyTradeService();
+         this.closedTradeItemsService = closedTradeItemsService;
+     }
+ 
++    /**
++     * Minimal authenticated observation for a client recovering an ambiguous
++     * trade request. This is NOT a transaction receipt: an empty response
++     * must never be interpreted as permission to submit the trade again.
++     */
++    @GET
++    @Path("/status")
++    @Operation(
++            summary = "Observe local trade states for a specific offer",
++            description = "Returns minimal states from this node's open and closed trade stores. " +
++                    "The observation is non-atomic and cannot prove a prior trade request failed.",
++            responses = {
++                    @ApiResponse(responseCode = "200", description = "Matching local trade states"),
++                    @ApiResponse(responseCode = "400", description = "Missing or invalid offerId"),
++                    @ApiResponse(responseCode = "500", description = "Internal server error")
++            }
++    )
++    public Response getTradeStatuses(@QueryParam("offerId") String offerId) {
++        try {
++            return buildOkResponse(TradeStatusQuery.byOffer(
++                    bisqEasyTradeService.getTrades().stream(),
++                    bisqEasyTradeService.getClosedTrades().stream(), offerId));
++        } catch (IllegalArgumentException e) {
++            return buildErrorResponse(Response.Status.BAD_REQUEST, e.getMessage());
++        } catch (Exception e) {
++            log.error("Unable to read local trade status", e);
++            return buildErrorResponse("An unexpected error occurred");
++        }
++    }
+     @GET
+     @Path("/closed")
+     @Operation(
+             summary = "Get closed trades",
+             description = "Returns closed trades (completed, cancelled, rejected, or failed) for the current user. " +
+diff --git a/api/src/main/java/bisq/api/rest_api/endpoints/trades/TradeStatusDto.java b/api/src/main/java/bisq/api/rest_api/endpoints/trades/TradeStatusDto.java
+new file mode 100644
+--- /dev/null
++++ b/api/src/main/java/bisq/api/rest_api/endpoints/trades/TradeStatusDto.java
+@@ -0,0 +1,21 @@
++/*
++ * This file is part of Bisq.
++ *
++ * Bisq is free software: you can redistribute it and/or modify it
++ * under the terms of the GNU Affero General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ */
++package bisq.api.rest_api.endpoints.trades;
++
++import bisq.api.dto.trade.bisq_easy.protocol.BisqEasyTradeStateDto;
++
++/**
++ * Minimal state-only response for an authenticated local Bisq 2 client.
++ * Never place payment details, profile keys or chat content in this DTO.
++ */
++public record TradeStatusDto(String tradeId,
++                             String offerId,
++                             BisqEasyTradeStateDto tradeState,
++                             String lifecycle) {
++}
+diff --git a/api/src/main/java/bisq/api/rest_api/endpoints/trades/TradeStatusQuery.java b/api/src/main/java/bisq/api/rest_api/endpoints/trades/TradeStatusQuery.java
+new file mode 100644
+--- /dev/null
++++ b/api/src/main/java/bisq/api/rest_api/endpoints/trades/TradeStatusQuery.java
+@@ -0,0 +1,59 @@
++/*
++ * This file is part of Bisq.
++ *
++ * Bisq is free software: you can redistribute it and/or modify it
++ * under the terms of the GNU Affero General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ */
++package bisq.api.rest_api.endpoints.trades;
++
++import bisq.api.dto.DtoMappings;
++import bisq.trade.bisq_easy.BisqEasyTrade;
++import bisq.trade.bisq_easy.protocol.BisqEasyClosedTrade;
++
++import java.util.Comparator;
++import java.util.HashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.stream.Stream;
++
++/**
++ * Read-only observations from the node's own open and closed trade stores.
++ * The stores are concurrently mutable: this is NOT an atomic snapshot and
++ * an empty response cannot justify retrying an ambiguous POST /trades.
++ */
++final class TradeStatusQuery {
++    private TradeStatusQuery() {
++    }
++
++    static List<TradeStatusDto> byOffer(Stream<BisqEasyTrade> openTrades,
++                                        Stream<BisqEasyClosedTrade> closedTrades,
++                                        String offerId) {
++        if (offerId == null || !offerId.matches("[A-Za-z0-9_.:-]{1,256}")) {
++            throw new IllegalArgumentException("offerId must be a valid identifier");
++        }
++        Map<String, TradeStatusDto> byId = new HashMap<>();
++        openTrades.filter(trade -> offerId.equals(trade.getOffer().getId()))
++                .map(trade -> toDto(trade, "OPEN"))
++                .forEach(dto -> byId.put(dto.tradeId(), dto));
++
++        // Moving a trade to the closed store may temporarily leave it in
++        // both stores. Prefer CLOSED for the same ID during that interval.
++        closedTrades.map(BisqEasyClosedTrade::trade)
++                .filter(trade -> offerId.equals(trade.getOffer().getId()))
++                .map(trade -> toDto(trade, "CLOSED"))
++                .forEach(dto -> byId.put(dto.tradeId(), dto));
++
++        return byId.values().stream()
++                .sorted(Comparator.comparing(TradeStatusDto::tradeId))
++                .toList();
++    }
++
++    private static TradeStatusDto toDto(BisqEasyTrade trade, String lifecycle) {
++        return new TradeStatusDto(trade.getId(),
++                trade.getOffer().getId(),
++                DtoMappings.BisqEasyTradeStateMapping.fromBisq2Model(trade.getTradeState()),
++                lifecycle);
++    }
++}
+diff --git a/api/src/test/java/bisq/api/rest_api/endpoints/trades/TradeStatusQueryTest.java b/api/src/test/java/bisq/api/rest_api/endpoints/trades/TradeStatusQueryTest.java
+new file mode 100644
+--- /dev/null
++++ b/api/src/test/java/bisq/api/rest_api/endpoints/trades/TradeStatusQueryTest.java
+@@ -0,0 +1,74 @@
++/*
++ * This file is part of Bisq.
++ *
++ * Bisq is free software: you can redistribute it and/or modify it
++ * under the terms of the GNU Affero General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ */
++package bisq.api.rest_api.endpoints.trades;
++
++import bisq.offer.bisq_easy.BisqEasyOffer;
++import bisq.trade.bisq_easy.BisqEasyTrade;
++import bisq.trade.bisq_easy.protocol.BisqEasyClosedTrade;
++import bisq.trade.bisq_easy.protocol.BisqEasyTradeState;
++import org.junit.jupiter.api.Test;
++
++import java.util.List;
++import java.util.stream.Stream;
++
++import static org.assertj.core.api.Assertions.assertThat;
++import static org.assertj.core.api.Assertions.assertThatThrownBy;
++import static org.mockito.Mockito.mock;
++import static org.mockito.Mockito.when;
++
++class TradeStatusQueryTest {
++    private static BisqEasyTrade trade(String tradeId, String offerId,
++                                       BisqEasyTradeState state) {
++        BisqEasyTrade trade = mock(BisqEasyTrade.class);
++        BisqEasyOffer offer = mock(BisqEasyOffer.class);
++        when(trade.getId()).thenReturn(tradeId);
++        when(trade.getOffer()).thenReturn(offer);
++        when(offer.getId()).thenReturn(offerId);
++        when(trade.getTradeState()).thenReturn(state);
++        return trade;
++    }
++
++    @Test
++    void includesOnlyRequestedOfferAndNoPrivateData() {
++        BisqEasyTrade a = trade("trade-a", "offer-1", BisqEasyTradeState.INIT);
++        BisqEasyTrade b = trade("trade-b", "other-offer", BisqEasyTradeState.INIT);
++        List<TradeStatusDto> matches = TradeStatusQuery.byOffer(
++                Stream.of(a, b), Stream.empty(), "offer-1");
++
++        assertThat(matches).hasSize(1);
++        assertThat(matches.getFirst().tradeId()).isEqualTo("trade-a");
++        assertThat(matches.getFirst().offerId()).isEqualTo("offer-1");
++        assertThat(matches.getFirst().lifecycle()).isEqualTo("OPEN");
++        assertThat(matches.getFirst().tradeState().name()).isEqualTo("INIT");
++    }
++
++    @Test
++    void closedStoreWinsWhenTheSameTradeIsTemporarilyInBoth() {
++        BisqEasyTrade trade = trade("trade-1", "offer-1", BisqEasyTradeState.BTC_CONFIRMED);
++        BisqEasyClosedTrade closed = new BisqEasyClosedTrade(trade, null, null);
++        List<TradeStatusDto> matches = TradeStatusQuery.byOffer(
++                Stream.of(trade), Stream.of(closed), "offer-1");
++        assertThat(matches).hasSize(1);
++        assertThat(matches.getFirst().lifecycle()).isEqualTo("CLOSED");
++    }
++
++    @Test
++    void aMissingTradeDoesNotBecomeAClaimOfFailureOrSafeRetry() {
++        assertThat(TradeStatusQuery.byOffer(Stream.empty(), Stream.empty(), "offer-1")).isEmpty();
++    }
++
++    @Test
++    void rejectMissingOrMalformedOfferFilter() {
++        for (String id : new String[]{null, "", "../other", "contains space"}) {
++            assertThatThrownBy(() ->
++                    TradeStatusQuery.byOffer(Stream.empty(), Stream.empty(), id))
++                    .isInstanceOf(IllegalArgumentException.class);
++        }
++    }
++}
+diff --git a/docs/specifications/api/trade-status.md b/docs/specifications/api/trade-status.md
+new file mode 100644
+--- /dev/null
++++ b/docs/specifications/api/trade-status.md
+@@ -0,0 +1,38 @@
++# Read-only trade status observation (experimental)
++
++This proposal adds a minimal GET endpoint for clients that lost a response
++or a WebSocket connection: `GET /api/v1/trades/status?offerId=<id>`.
++
++The response is a list containing `tradeId`, `offerId`, `tradeState`
++and `lifecycle` (OPEN/CLOSED), with no payment details or key material.
++Results are sorted by trade ID. A currently closed trade can temporarily
++appear in both stores, so the closed record wins for duplicate trade IDs.
++
++It requires the existing TRADES permission and the existing API session.
++**That permission currently also authorizes state-mutating trade routes.**
++This patch does not implement fine-grained read-only grants or change pairing.
++
++## Recovery semantics
++
++- This endpoint never creates, accepts, closes or replays a trade.
++- Open and closed trade stores can change during iteration; the result is
++  observational, not a linearizable or durable commit point.
++- An empty list does **not** prove that a prior take-offer request failed.
++  It must not be used to authorize a blind retry after a timeout.
++- Multiple trades can share an offer ID; this endpoint does not establish
++  which request, if any, created a listed trade.
++- This feature does not repair the acknowledged-before-durable-apply issue
++  tracked in bisq2#5126.
++- A production agent would still need a separately reviewed per-request
++  idempotency contract and narrowly scoped credentials.
++
++## Companion adapter
++
++A read-only client and an observation-only recovery journal are implemented
++in patrickdugan/Bisq-Agent-Network on branch
++`experiment/bisq2-trade-state-reconciliation`.
++
++## Verification
++
++Run Bisq 2's API tests and check permission behavior and API compatibility
++on a fork before submitting this feature for upstream review.

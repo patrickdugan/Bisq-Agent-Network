@@ -1,0 +1,46 @@
+name: Bisq 2 upstream experiment
+
+on:
+  push:
+    branches:
+      - experiment/bisq2-trade-state-reconciliation
+    paths:
+      - upstream-experiments/**
+      - .github/workflows/bisq2-upstream-experiment.yml
+  workflow_dispatch:
+
+jobs:
+  fork-patch-compatibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout Bisq Agent Network experiment
+        uses: actions/checkout@v4
+        with:
+          path: ban
+
+      - name: Checkout pinned Bisq 2 upstream (read-only)
+        uses: actions/checkout@v4
+        with:
+          repository: bisq-network/bisq2
+          ref: 7767b8b3196b9e8be0a1413c2237f4f595b86cc0
+          path: bisq2
+
+      - name: Check and apply proposed patch to disposable checkout
+        run: |
+          cd bisq2
+          git apply --check ../ban/upstream-experiments/bisq2-trade-status/0001-read-only-trade-status.patch
+          git apply ../ban/upstream-experiments/bisq2-trade-status/0001-read-only-trade-status.patch
+          git diff --check
+          git status --short
+
+      - name: Configure JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Compile and test Bisq 2 API experiment
+        working-directory: bisq2
+        run: |
+          ./gradlew :api:test --tests bisq.api.rest_api.endpoints.trades.TradeStatusQueryTest --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx3g

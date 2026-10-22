@@ -6,7 +6,8 @@ import os
 from pathlib import Path
 import urllib.error
 import urllib.request
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, quote
+from .trade_status import TradeObservation, parse_statuses, validate_id
 
 from .models import Snapshot, currency_code, normalize_snapshot
 from .references import MarketReference, decode_reference
@@ -116,6 +117,19 @@ class Bisq2LocalAdapter:
             return decode_reference(data, code, "BISQ2_LOCAL")
         except ValueError:
             raise AdapterError("missing or invalid Bisq market price reference") from None
+
+
+    def trade_status(self, offer_id: str) -> tuple[TradeObservation, ...]:
+        """Experimental read-only GET on a Bisq 2 fork; not used by default.
+
+        Note that the current upstream TRADES permission also allows writes.
+        No result, including an empty list, authorizes repeating a trade.
+        """
+        validate_id(offer_id)
+        if not self.client_id or not self.session_id:
+            raise AdapterError("paired client and session required for experimental trade observation")
+        payload = self._get_json("/trades/status?offerId=" + quote(offer_id, safe=""))
+        return parse_statuses(payload, offer_id)
 
 
 def make_adapter(source: str | None = None) -> FixtureAdapter | Bisq2LocalAdapter:
