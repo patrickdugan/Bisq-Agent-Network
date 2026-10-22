@@ -1,0 +1,29 @@
+{
+  "quotes": {
+    "PHP": {
+      "value": 41500000000,
+      "precision": 4,
+      "lowPrecision": 2,
+      "market": {
+        "baseCurrencyCode": "BTC",
+        "quoteCurrencyCode": "PHP"
+      },
+      "baseSideMonetary": {
+        "type": "Coin",
+        "id": "BTC",
+        "value": 100000000,
+        "code": "BTC",
+        "precision": 8,
+        "lowPrecision": 4
+      },
+      "quoteSideMonetary": {
+        "type": "Fiat",
+        "id": "PHP",
+        "value": 41500000000,
+        "code": "PHP",
+        "precision": 4,
+        "lowPrecision": 2
+      }
+    }
+  }
+}

@@ -3,48 +3,163 @@
     "bisqEasyOffer": {
       "id": "synthetic-php-sell-gcash-001",
       "direction": "SELL",
-      "market": {"baseCurrencyCode": "BTC", "quoteCurrencyCode": "PHP"},
-      "amountSpec": {"type": "QuoteSideRangeAmountSpec", "minAmount": 5000000, "maxAmount": 25000000},
-      "priceSpec": {"type": "FixPriceSpec", "priceQuote": {"value": 420000000, "precision": 2, "market": {"baseCurrencyCode": "BTC", "quoteCurrencyCode": "PHP"}}}
+      "market": {
+        "baseCurrencyCode": "BTC",
+        "quoteCurrencyCode": "PHP"
+      },
+      "amountSpec": {
+        "type": "QuoteSideRangeAmountSpec",
+        "minAmount": 5000000,
+        "maxAmount": 25000000
+      },
+      "priceSpec": {
+        "type": "FixPriceSpec",
+        "priceQuote": {
+          "value": 42000000000,
+          "precision": 4,
+          "lowPrecision": 2,
+          "market": {
+            "baseCurrencyCode": "BTC",
+            "quoteCurrencyCode": "PHP"
+          },
+          "baseSideMonetary": {
+            "type": "Coin",
+            "id": "BTC",
+            "value": 100000000,
+            "code": "BTC",
+            "precision": 8,
+            "lowPrecision": 4
+          },
+          "quoteSideMonetary": {
+            "type": "Fiat",
+            "id": "PHP",
+            "value": 42000000000,
+            "code": "PHP",
+            "precision": 4,
+            "lowPrecision": 2
+          }
+        }
+      }
     },
-    "userProfile": {"nickName": "DemoMerchantA"},
-    "formattedQuoteAmount": "PHP 500 - 2,500",
-    "quoteSidePaymentMethods": ["GCash", "Bank Transfer"],
-    "reputationScore": {"totalScore": 2400}
+    "userProfile": {
+      "nickName": "DemoMerchantA"
+    },
+    "formattedQuoteAmount": "PHP 500 - 2500",
+    "quoteSidePaymentMethods": [
+      "GCash",
+      "Bank Transfer"
+    ],
+    "reputationScore": {
+      "totalScore": 2400
+    }
   },
   {
     "bisqEasyOffer": {
       "id": "synthetic-php-sell-bank-002",
       "direction": "SELL",
-      "market": {"baseCurrencyCode": "BTC", "quoteCurrencyCode": "PHP"},
-      "priceSpec": {"type": "FixPriceSpec", "priceQuote": {"value": 425000000, "precision": 2, "market": {"baseCurrencyCode": "BTC", "quoteCurrencyCode": "PHP"}}}
+      "market": {
+        "baseCurrencyCode": "BTC",
+        "quoteCurrencyCode": "PHP"
+      },
+      "amountSpec": {
+        "type": "QuoteSideRangeAmountSpec",
+        "minAmount": 10000000,
+        "maxAmount": 50000000
+      },
+      "priceSpec": {
+        "type": "FixPriceSpec",
+        "priceQuote": {
+          "value": 42500000000,
+          "precision": 4,
+          "lowPrecision": 2,
+          "market": {
+            "baseCurrencyCode": "BTC",
+            "quoteCurrencyCode": "PHP"
+          },
+          "baseSideMonetary": {
+            "type": "Coin",
+            "id": "BTC",
+            "value": 100000000,
+            "code": "BTC",
+            "precision": 8,
+            "lowPrecision": 4
+          },
+          "quoteSideMonetary": {
+            "type": "Fiat",
+            "id": "PHP",
+            "value": 42500000000,
+            "code": "PHP",
+            "precision": 4,
+            "lowPrecision": 2
+          }
+        }
+      }
     },
-    "userProfile": {"nickName": "DemoMerchantB"},
-    "formattedQuoteAmount": "PHP 1,000 - 5,000",
-    "quoteSidePaymentMethods": ["Bank Transfer"],
-    "reputationScore": {"totalScore": 900}
+    "userProfile": {
+      "nickName": "DemoMerchantB"
+    },
+    "formattedQuoteAmount": "PHP 1000 - 5000",
+    "quoteSidePaymentMethods": [
+      "Bank Transfer"
+    ],
+    "reputationScore": {
+      "totalScore": 900
+    }
   },
   {
     "bisqEasyOffer": {
       "id": "synthetic-php-sell-dynamic-003",
       "direction": "SELL",
-      "market": {"baseCurrencyCode": "BTC", "quoteCurrencyCode": "PHP"},
-      "priceSpec": {"type": "FloatPriceSpec", "percentage": 2.5}
+      "market": {
+        "baseCurrencyCode": "BTC",
+        "quoteCurrencyCode": "PHP"
+      },
+      "amountSpec": {
+        "type": "QuoteSideRangeAmountSpec",
+        "minAmount": 7500000,
+        "maxAmount": 30000000
+      },
+      "priceSpec": {
+        "type": "FloatPriceSpec",
+        "percentage": 0.025
+      }
     },
-    "userProfile": {"nickName": "DemoMerchantC"},
-    "formattedQuoteAmount": "PHP 750 - 3,000",
-    "quoteSidePaymentMethods": ["GCash"],
-    "reputationScore": {"totalScore": 500}
+    "userProfile": {
+      "nickName": "DemoMerchantC"
+    },
+    "formattedQuoteAmount": "PHP 750 - 3000",
+    "quoteSidePaymentMethods": [
+      "GCash"
+    ],
+    "reputationScore": {
+      "totalScore": 500
+    }
   },
   {
     "bisqEasyOffer": {
       "id": "synthetic-php-buy-004",
       "direction": "BUY",
-      "market": {"baseCurrencyCode": "BTC", "quoteCurrencyCode": "PHP"},
-      "priceSpec": {"type": "MarketPriceSpec"}
+      "market": {
+        "baseCurrencyCode": "BTC",
+        "quoteCurrencyCode": "PHP"
+      },
+      "amountSpec": {
+        "type": "QuoteSideFixedAmountSpec",
+        "amount": 9000000
+      },
+      "priceSpec": {
+        "type": "MarketPriceSpec"
+      }
     },
-    "userProfile": {"nickName": "DemoBuyerD"},
-    "formattedQuoteAmount": "PHP 900",
-    "quoteSidePaymentMethods": ["GCash"]
+    "userProfile": {
+      "nickName": "DemoBuyerD"
+    },
+    "formattedQuoteAmount": "PHP 900 - 900",
+    "quoteSidePaymentMethods": [
+      "GCash"
+    ],
+    "reputationScore": {
+      "totalScore": 0
+    }
   }
 ]

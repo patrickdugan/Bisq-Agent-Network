@@ -30,9 +30,13 @@ class CoreTests(unittest.TestCase):
         self.assertTrue(result["requires_human_trade_confirmation"])
 
     def test_price_precision(self):
-        spec = {"type": "FixPriceSpec", "priceQuote": {"value": 123456, "precision": 2,
-                "market": {"baseCurrencyCode": "BTC", "quoteCurrencyCode": "PHP"}}}
-        self.assertEqual(fixed_price(spec, "PHP"), Decimal("1234.56"))
+        spec = {"type": "FixPriceSpec", "priceQuote": {
+            "value": 12345600, "precision": 4,
+            "market": {"baseCurrencyCode": "BTC", "quoteCurrencyCode": "PHP"},
+            "baseSideMonetary": {"type": "Coin", "value": 100000000, "code": "BTC", "precision": 8},
+            "quoteSideMonetary": {"type": "Fiat", "value": 12345600, "code": "PHP", "precision": 4}
+        }}
+        self.assertEqual(fixed_price(spec, "PHP"), Decimal("1234.5600"))
 
     def test_invalid_quote_is_discarded(self):
         bad = self.snapshot.offers[0].as_dict()

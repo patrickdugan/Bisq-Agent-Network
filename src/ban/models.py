@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 import re
 from typing import Any
+from .price_contract import AmountBounds, ContractViolation, decode_amount_spec, decode_price_quote, float_markup
 
 CURRENCY = re.compile(r"^[A-Z]{3,5}$")
 
@@ -32,24 +33,9 @@ def positive_decimal(value: str | Decimal) -> Decimal:
 
 
 def fixed_price(spec: dict[str, Any], currency: str) -> Decimal | None:
-    # Floating and market-price offers require additional live quote state.
     if not isinstance(spec, dict) or spec.get("type") != "FixPriceSpec":
         return None
-    quote = spec.get("priceQuote")
-    if not isinstance(quote, dict):
-        raise InvalidData("fixed-price quote missing")
-    value, precision = quote.get("value"), quote.get("precision")
-    if type(value) is not int or type(precision) is not int or not (0 <= precision <= 12):
-        raise InvalidData("invalid fixed-price encoding")
-    market = quote.get("market", {})
-    if not isinstance(market, dict):
-        raise InvalidData("invalid fixed-price market")
-    if market.get("baseCurrencyCode") != "BTC" or market.get("quoteCurrencyCode") != currency:
-        raise InvalidData("price quote market mismatch")
-    price = Decimal(value).scaleb(-precision)
-    if price <= 0 or not price.is_finite():
-        raise InvalidData("nonpositive fixed price")
-    return price
+    return decode_price_quote(spec.get("priceQuote"), currency)
 
 
 @dataclass(frozen=True)
@@ -61,8 +47,10 @@ class Offer:
     payment_methods: tuple[str, ...]
     price_fiat_per_btc: Decimal | None
     amount_display: str
+    amount_bounds: AmountBounds
     reputation_score: int | None
     pricing_type: str
+    markup_fraction: Decimal | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -73,9 +61,11 @@ class Offer:
             "payment_methods": list(self.payment_methods),
             "fiat_per_btc": str(self.price_fiat_per_btc) if self.price_fiat_per_btc else None,
             "amount_display": self.amount_display,
-            "amount_eligibility": "unverified",
+            "advertised_amount_bounds": self.amount_bounds.as_dict(),
+            "amount_eligibility": "not_assessed",
             "reputation_score": self.reputation_score,
             "pricing_type": self.pricing_type,
+            "markup_fraction": str(self.markup_fraction) if self.markup_fraction is not None else None,
         }
 
 
@@ -114,7 +104,7 @@ def normalize_offer(row: dict[str, Any], currency: str) -> Offer:
     if direction not in ("BUY", "SELL"):
         raise InvalidData("invalid maker direction")
     spec = raw.get("priceSpec", {})
-    if not isinstance(spec, dict):
+    if not isinstance(spec, dict) or spec.get("type") not in ("FixPriceSpec", "FloatPriceSpec", "MarketPriceSpec"):
         raise InvalidData("invalid price spec")
     methods = row.get("quoteSidePaymentMethods") or []
     if not isinstance(methods, list) or any(not isinstance(m, str) for m in methods):
@@ -137,8 +127,10 @@ def normalize_offer(row: dict[str, Any], currency: str) -> Offer:
         payment_methods=tuple(m[:100] for m in methods[:30]),
         price_fiat_per_btc=fixed_price(spec, currency),
         amount_display=str(row.get("formattedQuoteAmount") or "See Bisq app")[:120],
+        amount_bounds=decode_amount_spec(raw.get("amountSpec"), currency),
         reputation_score=score,
-        pricing_type=str(spec.get("type") or "unknown")[:50],
+        pricing_type=spec["type"],
+        markup_fraction=float_markup(spec),
     )
 
 
@@ -148,10 +140,16 @@ def normalize_snapshot(data: Any, currency: str, source: str) -> Snapshot:
         raise InvalidData("offerbook must be an array of at most 10000 entries")
     offers: list[Offer] = []
     rejected = 0
+    seen: set[str] = set()
     for row in data:
         try:
-            offers.append(normalize_offer(row, code))
-        except (InvalidData, TypeError, ValueError, OverflowError):
+            offer = normalize_offer(row, code)
+            if offer.offer_id in seen:
+                rejected += 1
+                continue
+            seen.add(offer.offer_id)
+            offers.append(offer)
+        except (InvalidData, ContractViolation, TypeError, ValueError, OverflowError, ArithmeticError):
             rejected += 1
     return Snapshot(
         currency=code,
