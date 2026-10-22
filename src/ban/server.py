@@ -14,6 +14,7 @@ from .ledger import metrics
 from .models import InvalidData, currency_code
 from .planner import plan
 from .merchant import draft_merchant_quote
+from .cohort import cohort_report
 
 STATIC = Path(__file__).with_name("static")
 STATIC_FILES = {
@@ -28,7 +29,7 @@ def handler_class(source: str | None = None, db_path: str | None = None):
     ledger_path = db_path or os.getenv("BAN_DB", "ban.sqlite3")
 
     class Handler(BaseHTTPRequestHandler):
-        server_version = "BAN/0.2"
+        server_version = "BAN/0.3"
         sys_version = ""
 
         def log_message(self, format, *args):
@@ -79,6 +80,10 @@ def handler_class(source: str | None = None, db_path: str | None = None):
                 currency = currency_code(currency)
                 if url.path == "/api/metrics":
                     self.json(200, metrics(ledger_path))
+                    return
+                if url.path == "/api/cohort":
+                    # Aggregate counts only, never pseudonyms, contact info or merchant IDs.
+                    self.json(200, cohort_report(ledger_path, currency))
                     return
                 if url.path == "/api/merchant-quote":
                     result = draft_merchant_quote(

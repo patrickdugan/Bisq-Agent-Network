@@ -19,3 +19,6 @@ Responsible disclosure: submit sensitive vulnerabilities through GitHub's privat
 10. Market oracle: local observations expire after 60 seconds; underlying price age remains unknown. None of the prices permit automatic execution.
 11. Merchant quoting: bounded 0–2500 bps asks with no Bisq write path.
 12. DNS rebinding: local UI API refuses requests whose Host differs from its loopback binding.
+
+13. Cohort data: explicit operator-attested consent, 90-day pilot validity, pseudonyms and generic rails only. Withdrawal hard-deletes the local profile; the operator is responsible for removing exports. Active statuses are self-reported. Local dashboard discloses aggregate counts only.
+14. API doctor: performs GET-only loopback requests with existing permissions; emits version/schema counters without credentials, merchant identities or private payment details. A passing smoke check does not establish financial security or market validity.

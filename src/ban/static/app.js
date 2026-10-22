@@ -49,6 +49,18 @@ function renderPlan(data) {
       task.rationale + " " + task.next_step, "task");
   }
 }
+function renderCohort(data) {
+  byId("cohortEnrolled").textContent = data.enrolled;
+  byId("cohortActive").textContent = data.active_self_reported;
+  clear("cohortBreakdown");
+  item("cohortBreakdown", "First five merchants", data.first_five_merchant_target_remaining + " remaining",
+    "Local operator-attested enrollments, separate from live Bisq offerbook");
+  item("cohortBreakdown", "First twenty merchants", data.twenty_merchant_target_remaining + " remaining",
+    "The active flag is self-reported and does not establish actual inventory");
+  for (const [channel, count] of Object.entries(data.by_acquisition_channel)) {
+    item("cohortBreakdown", channel.replaceAll("_", " "), count, "Merchant acquisition channel");
+  }
+}
 function renderLedger(data) {
   clear("ledger");
   item("ledger", "Total recorded events", String(data.total_events), data.caveat);
@@ -59,12 +71,13 @@ async function refresh() {
   byId("status").textContent = "Loading…";
   const currency = state.currency;
   try {
-    const [health, market, report, plan, ledger] = await Promise.all([
+    const [health, market, report, plan, ledger, cohort] = await Promise.all([
       request("/api/health"),
       request("/api/offers?currency=" + encodeURIComponent(currency)),
       request("/api/report?currency=" + encodeURIComponent(currency)),
       request("/api/plan?currency=" + encodeURIComponent(currency)),
-      request("/api/metrics")
+      request("/api/metrics"),
+      request("/api/cohort?currency=" + encodeURIComponent(currency))
     ]);
     byId("sourceBadge").textContent = health.source === "SYNTHETIC_FIXTURE" ? "SYNTHETIC DEMO DATA" : "LOCAL BISQ 2 NODE";
     byId("total").textContent = report.total_offers;
@@ -74,6 +87,7 @@ async function refresh() {
     renderOffers(market);
     renderPlan(plan);
     renderLedger(ledger);
+    renderCohort(cohort);
     byId("status").textContent = "Updated " + new Date(market.fetched_at).toLocaleTimeString() + " · Read only";
   } catch (error) {
     byId("status").textContent = "Data unavailable: " + error.message;

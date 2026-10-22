@@ -18,3 +18,6 @@ API contracts can change across Bisq 2 releases. Compare them with the version o
 - https://github.com/bisq-network/bisq2/blob/main/offer/src/main/java/bisq/offer/price/PriceUtil.java : float markup is marketPrice * (1 + fraction).
 - https://github.com/bisq-network/bisq2/blob/main/api/src/main/java/bisq/api/rest_api/endpoints/market_price/MarketPriceRestApi.java : GET /market-price/quotes.
 - https://github.com/bisq-network/bisq2/blob/main/api/src/main/java/bisq/api/dto/offer/amount/spec/AmountSpecDto.java : fixed and range amount DTO types.
+
+- https://github.com/bisq-network/bisq2/blob/main/api/src/main/java/bisq/api/rest_api/endpoints/config/ConfigRestApi.java : optional GET /config/capabilities and /config/trade-amount-limits.
+- https://github.com/bisq-network/bisq2/blob/main/api/src/main/java/bisq/api/dto/config/ApiCapabilitiesDto.java : apiVersion and features response shape.

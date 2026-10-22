@@ -40,3 +40,9 @@ At 20 paying merchants and a hypothetical $79/month software subscription, recur
 ## Limits on acquisition
 
 No deceptive volume claims, fictitious liquidity, unsolicited contact harvesting, fake referrals, hidden paid endorsements or evasion of exchange controls. Inform users that available payment methods and legal requirements differ by jurisdiction. Conflict-area trading corridors require particular care with payment reliability, local access, user safety and sanctions exposure.
+
+## Cohort implementation (v0.3)
+
+Merchant operations now have a separate local consent-based SQLite roster. Record a pseudonymous merchant using `merchant-enroll --attest-consent`; switch to operator-reported active only after independent confirmation; honor withdrawal immediately with `merchant-withdraw --attest-request`. Profiles expire after 90 days unless renewed and are excluded from the dashboard once expired. Dashboard summaries contain only aggregated counts.
+
+Treat the live Bisq offerbook, the self-reported merchant roster and operator-entered activity events as distinct populations. A merchant counted as active in the roster is not evidence of a live Bisq offer or completed trade. The first measurable experiment is five independently interviewed, consenting merchants and genuine, separately verified offers in one fiat market.

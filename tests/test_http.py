@@ -1,15 +1,20 @@
 import json
+import tempfile
+from pathlib import Path
 import threading
 import unittest
 import urllib.error
 import urllib.request
 from ban.server import make_server
+from ban.cohort import enroll
 
 
 class HttpTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.server = make_server(0, "fixture")
+        cls.temp = tempfile.TemporaryDirectory()
+        cls.db_path = Path(cls.temp.name) / "app.db"
+        cls.server = make_server(0, "fixture", db_path=str(cls.db_path))
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
         cls.root = "http://127.0.0.1:" + str(cls.server.server_port)
@@ -19,6 +24,7 @@ class HttpTests(unittest.TestCase):
         cls.server.shutdown()
         cls.server.server_close()
         cls.thread.join(timeout=3)
+        cls.temp.cleanup()
 
     def get(self, path):
         with urllib.request.urlopen(self.root + path, timeout=3) as response:
@@ -72,6 +78,16 @@ class HttpTests(unittest.TestCase):
         offer = next(x for x in data["offers"] if x["pricing_type"] == "FloatPriceSpec")
         self.assertEqual(offer["fiat_per_btc"], "4253750.0000")
         self.assertEqual(offer["price_provenance"], "floating_derived_unverified_age")
+
+    def test_cohort_endpoint_returns_only_aggregate_counts(self):
+        item = enroll(self.db_path, alias="OperatorMerchant", currency="PHP",
+                      payment_methods=["GCash"], channel="community", consent_attested=True)
+        status, view, _ = self.get("/api/cohort?currency=PHP")
+        self.assertEqual(status, 200)
+        self.assertGreaterEqual(view["enrolled"], 1)
+        self.assertEqual(view["verification"], "operator_attested_not_independently_verified")
+        self.assertNotIn(item["merchant_id"], json.dumps(view))
+        self.assertNotIn("OperatorMerchant", json.dumps(view))
 
     def test_static_assets(self):
         with urllib.request.urlopen(self.root + "/", timeout=3) as response:

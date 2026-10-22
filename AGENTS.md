@@ -17,9 +17,13 @@ Purpose: independent, local-first integrations that help real merchants and buye
 - Compile: python -m compileall -q src tests
 
 ## Design
-- Python 3.11 stdlib for v0.1; keep runtime portable.
+- Python 3.11 stdlib for v0.3; keep runtime portable.
 - Use Decimal for monetary calculations.
 - Maintain source labels (SYNTHETIC_FIXTURE versus BISQ2_LOCAL).
 - Keep personal data out of analytics and URLs.
 - Update tests, docs and API contracts together with any functional change.
 - This repository does not modify Bisq upstream. Follow the AGPL terms if adding actual Bisq source.
+
+## Pilot privacy
+
+Merchant cohort writes are CLI/operator actions only and require an explicit attestation of merchant consent. Never add contact details, wallet credentials, customer payment data or a remotely writable signup route. The dashboard must expose only aggregate cohort metrics, clearly labeled operator-reported. Withdrawing consent deletes local merchant profiles. Real node integration tests require a user-controlled paired Bisq node; fake-node CI is contract simulation only.

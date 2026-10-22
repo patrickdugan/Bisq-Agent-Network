@@ -15,7 +15,7 @@
   </header>
   <main>
     <section class="hero">
-      <div class="eyebrow">DECENTRALIZED MARKET INTELLIGENCE / READ-ONLY v0.2</div>
+      <div class="eyebrow">DECENTRALIZED MARKET INTELLIGENCE / READ-ONLY v0.3</div>
       <h1>Liquidity is the product.<br><em>Agents are the distribution.</em></h1>
       <p>A local command center for merchant supply, buyer discovery and agent authorization. Every trade stays under human control.</p>
       <div class="actions"><button id="refresh">Refresh market</button><span id="status" role="status">Connecting to local data source…</span></div>
@@ -60,6 +60,15 @@
       </section>
     </section>
     <section class="content bottom">
+      <section class="panel">
+        <div class="section-head"><h2>Opt-in merchant cohort</h2><span class="chip">LOCAL OPERATOR REPORTS</span></div>
+        <div class="metrics cohort-stats">
+          <div class="metric"><span>ENROLLED WITH ATTESTED CONSENT</span><strong id="cohortEnrolled">–</strong></div>
+          <div class="metric"><span>ACTIVE / SELF-REPORTED</span><strong id="cohortActive">–</strong></div>
+        </div>
+        <div id="cohortBreakdown" class="list" aria-live="polite"></div>
+        <p class="fine">Merchant aliases and IDs remain in the local SQLite file. Profiles expire after 90 days without renewed consent. The dashboard displays aggregated counts only.</p>
+      </section>
       <section class="panel">
         <div class="section-head"><h2>Merchant quote studio</h2><span class="chip">DRAFT ONLY</span></div>
         <form id="merchantForm">

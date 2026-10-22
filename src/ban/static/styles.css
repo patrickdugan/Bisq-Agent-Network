@@ -42,3 +42,5 @@ form button { margin-top:16px; }
 .price { color:#8ae7ba; font-variant-numeric:tabular-nums; }
 footer { border-top:1px solid #263a33; padding:24px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:14px; color:#83a49a; font-size:11px; }
 @media (max-width:760px) { .hero { padding:24px; } .content { grid-template-columns:1fr; } .metrics { grid-template-columns:1fr 1fr; } .fields { grid-template-columns:1fr; } }
+
+.cohort-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 12px; }
