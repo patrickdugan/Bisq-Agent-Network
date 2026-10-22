@@ -15,7 +15,7 @@
   </header>
   <main>
     <section class="hero">
-      <div class="eyebrow">DECENTRALIZED MARKET INTELLIGENCE / READ-ONLY v0.1</div>
+      <div class="eyebrow">DECENTRALIZED MARKET INTELLIGENCE / READ-ONLY v0.2</div>
       <h1>Liquidity is the product.<br><em>Agents are the distribution.</em></h1>
       <p>A local command center for merchant supply, buyer discovery and agent authorization. Every trade stays under human control.</p>
       <div class="actions"><button id="refresh">Refresh market</button><span id="status" role="status">Connecting to local data source…</span></div>
@@ -57,6 +57,28 @@
         <div class="section-head"><h2>Local funnel ledger</h2><span class="chip">OPERATOR REPORTED</span></div>
         <div id="ledger" class="list"></div>
         <p class="fine">The ledger stores event types and acquisition channels. Trade completion records are manually reported, not independently verified.</p>
+      </section>
+    </section>
+    <section class="content bottom">
+      <section class="panel">
+        <div class="section-head"><h2>Merchant quote studio</h2><span class="chip">DRAFT ONLY</span></div>
+        <form id="merchantForm">
+          <div class="fields">
+            <label>Example fiat ticket <input id="merchantTicket" type="number" min="1" max="1000000000" value="1000" required></label>
+            <label>Spread, basis points <input id="merchantSpread" type="number" min="0" max="2500" step="0.01" value="150" required></label>
+          </div>
+          <button type="submit">Prepare merchant quote <span aria-hidden="true">↗</span></button>
+        </form>
+        <p class="fine">Suggested ask from the local market reference. Upstream oracle age is unverified. No offer is published.</p>
+        <div id="merchantDraft" class="list" aria-live="polite"></div>
+      </section>
+      <section class="panel">
+        <div class="section-head"><h2>Trust boundaries</h2><span class="chip">HUMAN CONTROL</span></div>
+        <div class="list">
+          <div class="task"><div class="headline"><span>Bisq node</span><span class="price">READ ONLY</span></div><p>Local offerbook and reference quotes through a paired REST client.</p></div>
+          <div class="task"><div class="headline"><span>Merchant actions</span><span class="price">APPROVAL</span></div><p>Human-reviewed drafts with no publishing executor.</p></div>
+          <div class="task"><div class="headline"><span>ZK payment attestation</span><span class="price">DISABLED</span></div><p>Proof verifier fails closed while the protocol is under research.</p></div>
+        </div>
       </section>
     </section>
   </main>

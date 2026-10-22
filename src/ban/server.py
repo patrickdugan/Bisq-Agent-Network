@@ -27,7 +27,7 @@ def handler_class(source: str | None = None, db_path: str | None = None):
     ledger_path = db_path or os.getenv("BAN_DB", "ban.sqlite3")
 
     class Handler(BaseHTTPRequestHandler):
-        server_version = "BAN/0.1"
+        server_version = "BAN/0.2"
         sys_version = ""
 
         def log_message(self, format, *args):

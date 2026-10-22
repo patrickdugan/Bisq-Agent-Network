@@ -53,6 +53,26 @@ class HttpTests(unittest.TestCase):
             urllib.request.urlopen(req)
         self.assertEqual(caught.exception.code, 405)
 
+    def test_merchant_quote_draft(self):
+        status, data, _ = self.get("/api/merchant-quote?currency=PHP&fiat_amount=1000&margin_bps=150")
+        self.assertEqual(status, 200)
+        self.assertEqual(data["approval_state"], "draft_only")
+        self.assertEqual(data["suggested_fiat_per_btc"], "4212250.0000")
+        self.assertEqual(data["route"], "none")
+        self.assertFalse(data["upstream_age_verified"])
+
+    def test_local_host_required(self):
+        req = urllib.request.Request(self.root + "/api/health", headers={"Host": "evil.test"})
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(req, timeout=3)
+        self.assertEqual(caught.exception.code, 403)
+
+    def test_dynamic_buyer_reference(self):
+        data = self.get("/api/quote?currency=PHP&amount=1000&payment=GCash")[1]
+        offer = next(x for x in data["offers"] if x["pricing_type"] == "FloatPriceSpec")
+        self.assertEqual(offer["fiat_per_btc"], "4253750.0000")
+        self.assertEqual(offer["price_provenance"], "floating_derived_unverified_age")
+
     def test_static_assets(self):
         with urllib.request.urlopen(self.root + "/", timeout=3) as response:
             self.assertEqual(response.status, 200)

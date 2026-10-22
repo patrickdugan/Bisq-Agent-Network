@@ -10,11 +10,15 @@ class FakeBisq(BaseHTTPRequestHandler):
     last_headers = None
     def do_GET(self):
         FakeBisq.last_headers = dict(self.headers)
-        if self.path != "/api/v1/offerbook/markets/PHP/offers":
+        fixtures = {
+            "/api/v1/offerbook/markets/PHP/offers": "bisq2_PHP.json",
+            "/api/v1/market-price/quotes": "bisq2_PHP_quote.json",
+        }
+        if self.path not in fixtures:
             self.send_response(404)
             self.end_headers()
             return
-        fixture = Path(__file__).resolve().parents[1] / "fixtures" / "bisq2_PHP.json"
+        fixture = Path(__file__).resolve().parents[1] / "fixtures" / fixtures[self.path]
         payload = fixture.read_bytes()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -47,6 +51,11 @@ class AdapterHttpTests(unittest.TestCase):
         self.assertEqual(len(snapshot.offers), 4)
         self.assertEqual(FakeBisq.last_headers["Bisq-Client-Id"], "test-client")
         self.assertEqual(FakeBisq.last_headers["Bisq-Session-Id"], "test-session")
+        ref = client.reference_price("PHP")
+        self.assertEqual(str(ref.fiat_per_btc), "4150000.0000")
+        self.assertEqual(ref.source, "BISQ2_LOCAL")
+        self.assertFalse(ref.upstream_age_verified)
+        self.assertEqual(FakeBisq.last_headers["Bisq-Client-Id"], "test-client")
 
 
 if __name__ == "__main__":

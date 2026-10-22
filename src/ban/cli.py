@@ -8,6 +8,7 @@ from .gtm import market_report, outreach_draft
 from .ledger import metrics, record
 from .models import InvalidData
 from .planner import plan
+from .merchant import draft_merchant_quote
 from .policy import evaluate
 
 
@@ -23,6 +24,10 @@ def parser() -> argparse.ArgumentParser:
     sp.add_argument("--currency", default="PHP")
     sp.add_argument("--amount", required=True)
     sp.add_argument("--payment-method", default="")
+    sp = sub.add_parser("merchant-quote")
+    sp.add_argument("--currency", default="PHP")
+    sp.add_argument("--margin-bps", required=True)
+    sp.add_argument("--fiat-amount", required=True)
     sp = sub.add_parser("outreach")
     sp.add_argument("--merchant", required=True)
     sp.add_argument("--currency", default="PHP")
@@ -51,7 +56,11 @@ def run(args: argparse.Namespace) -> dict:
         return {"recorded": True, "event": args.event, "verification": "operator_reported"}
     if args.command == "metrics":
         return metrics(args.db)
-    snapshot = make_adapter(args.source).offers(args.currency)
+    adapter = make_adapter(args.source)
+    if args.command == "merchant-quote":
+        return draft_merchant_quote(adapter.reference_price(args.currency),
+                                    margin_bps=args.margin_bps, fiat_amount=args.fiat_amount)
+    snapshot = adapter.offers(args.currency)
     if args.command == "offers":
         return snapshot.as_dict()
     if args.command == "report":
@@ -59,7 +68,11 @@ def run(args: argparse.Namespace) -> dict:
     if args.command == "plan":
         return plan(snapshot, metrics(os.getenv("BAN_DB", "ban.sqlite3")))
     if args.command == "quote":
-        return shortlist(snapshot, args.amount, args.payment_method)
+        try:
+            reference = adapter.reference_price(args.currency)
+        except AdapterError:
+            reference = None
+        return shortlist(snapshot, args.amount, args.payment_method, reference)
     raise ValueError("unsupported command")
 
 

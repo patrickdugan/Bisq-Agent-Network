@@ -14,3 +14,8 @@ Bisq 2 pairing codes and session credentials authorize actions within the paired
 Future high-priority tests should cover malicious upstream payload sizes, redirects, stale sessions, replayed proofs, conflicting offers, partial payment, counterparty impersonation, currency mismatches and over-precision.
 
 Responsible disclosure: submit sensitive vulnerabilities through GitHub's private vulnerability reporting channel if available; otherwise contact the maintainers privately. Never include live credentials or customer data in an issue.
+
+9. Price validation: require consistent quote-side fiat precision 4 and base BTC precision 8. Malformed monetary sides and inverted amount ranges fail closed.
+10. Market oracle: local observations expire after 60 seconds; underlying price age remains unknown. None of the prices permit automatic execution.
+11. Merchant quoting: bounded 0–2500 bps asks with no Bisq write path.
+12. DNS rebinding: local UI API refuses requests whose Host differs from its loopback binding.

@@ -9,6 +9,7 @@ import urllib.request
 from urllib.parse import urlsplit
 
 from .models import Snapshot, currency_code, normalize_snapshot
+from .references import MarketReference, decode_reference
 
 
 class AdapterError(RuntimeError):
@@ -28,6 +29,16 @@ class FixtureAdapter:
             return normalize_snapshot(json.loads(path.read_text(encoding="utf-8")), code, "SYNTHETIC_FIXTURE")
         except (OSError, ValueError) as exc:
             raise AdapterError("could not load fixture") from exc
+
+    def reference_price(self, currency: str) -> MarketReference:
+        code = currency_code(currency)
+        path = self.fixtures_dir / ("bisq2_" + code + "_quote.json")
+        if not path.is_file():
+            raise AdapterError("no synthetic market reference for this currency")
+        try:
+            return decode_reference(json.loads(path.read_text(encoding="utf-8")), code, "SYNTHETIC_FIXTURE")
+        except (OSError, ValueError) as exc:
+            raise AdapterError("invalid synthetic market reference") from exc
 
 
 class _NoRedirects(urllib.request.HTTPRedirectHandler):
@@ -64,15 +75,14 @@ class Bisq2LocalAdapter:
         self.client_id = client_id
         self.session_id = session_id
 
-    def offers(self, currency: str) -> Snapshot:
-        code = currency_code(currency)
-        path = "/offerbook/markets/" + code + "/offers"
+    def _get_json(self, path: str):
         url = self.base_url + path
-        headers = {"Accept": "application/json", "User-Agent": "Bisq-Agent-Network/0.1"}
+        headers = {"Accept": "application/json", "User-Agent": "Bisq-Agent-Network/0.2"}
         if self.client_id and self.session_id:
             headers["Bisq-Client-Id"] = self.client_id
             headers["Bisq-Session-Id"] = self.session_id
         req = urllib.request.Request(url, headers=headers, method="GET")
+        # Disable system proxies so Bisq session headers cannot escape localhost.
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirects)
         try:
             with opener.open(req, timeout=5) as response:
@@ -81,16 +91,31 @@ class Bisq2LocalAdapter:
                 raw = response.read(1_048_577)
                 if len(raw) > 1_048_576:
                     raise AdapterError("upstream response exceeds 1 MiB")
-            data = json.loads(raw)
-            return normalize_snapshot(data, code, "BISQ2_LOCAL")
+            return json.loads(raw)
         except urllib.error.HTTPError as exc:
             if exc.code in (401, 403):
                 raise AdapterError("Bisq node denied access; pair a read-only client and refresh the session") from None
             raise AdapterError("Bisq node returned HTTP " + str(exc.code)) from None
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        except (urllib.error.URLError, TimeoutError, OSError):
             raise AdapterError("could not connect to local Bisq node") from None
         except (ValueError, UnicodeError):
             raise AdapterError("Bisq node returned invalid JSON") from None
+
+    def offers(self, currency: str) -> Snapshot:
+        code = currency_code(currency)
+        data = self._get_json("/offerbook/markets/" + code + "/offers")
+        try:
+            return normalize_snapshot(data, code, "BISQ2_LOCAL")
+        except ValueError:
+            raise AdapterError("invalid local Bisq offerbook response") from None
+
+    def reference_price(self, currency: str) -> MarketReference:
+        code = currency_code(currency)
+        data = self._get_json("/market-price/quotes")
+        try:
+            return decode_reference(data, code, "BISQ2_LOCAL")
+        except ValueError:
+            raise AdapterError("missing or invalid Bisq market price reference") from None
 
 
 def make_adapter(source: str | None = None) -> FixtureAdapter | Bisq2LocalAdapter:

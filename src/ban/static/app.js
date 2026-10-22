@@ -39,7 +39,7 @@ function renderMatches(data) {
   if (!data.offers.length) item("matches", "No matching sellers", "", "Try another permitted payment method.");
   for (const offer of data.offers) {
     const btc = offer.indicative_btc === null ? "Dynamic price" : offer.indicative_btc + " BTC";
-    item("matches", offer.nickname, btc, offer.price_note + " · " + offer.payment_methods.join(", "));
+    item("matches", offer.nickname, btc, offer.price_note + " · " + offer.amount_eligibility.replaceAll("_"," ") + " · " + offer.payment_methods.join(", "));
   }
 }
 function renderPlan(data) {
@@ -95,6 +95,23 @@ byId("quoteForm").addEventListener("submit", async (event) => {
   } catch (error) {
     clear("matches");
     item("matches", "Quote unavailable", "", error.message);
+  }
+});
+byId("merchantForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    const ticket = byId("merchantTicket").value;
+    const spread = byId("merchantSpread").value;
+    const q = await request("/api/merchant-quote?currency=" + encodeURIComponent(state.currency) +
+      "&fiat_amount=" + encodeURIComponent(ticket) + "&margin_bps=" + encodeURIComponent(spread));
+    clear("merchantDraft");
+    item("merchantDraft", "Draft BTC sell quote", q.suggested_fiat_per_btc + " " + q.currency,
+      "Reference " + q.reference_fiat_per_btc + " · Spread " + q.margin_bps +
+      " bps · Indicative " + q.indicative_btc + " BTC · No execution route");
+    item("merchantDraft", "Reference age", "UNVERIFIED", q.warning, "task");
+  } catch (error) {
+    clear("merchantDraft");
+    item("merchantDraft", "Quote unavailable", "", error.message);
   }
 });
 refresh();

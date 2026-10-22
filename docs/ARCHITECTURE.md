@@ -41,3 +41,11 @@ An attestation must bind an issuer-authenticated statement to a specific rail, a
 ## Next integration work
 
 Pin an upstream Bisq 2 version, capture sanitized endpoint schemas, implement authenticated session renewal with explicit operator consent, verify structured price units against upstream code, and add deterministic tests for stale data and conflicting price/amount formats. Keep every trading mutation off until its invariants and human approval path have been separately designed and tested.
+
+## v0.2 quote and amount boundary
+
+Strict decoder: fiat price precision 4, BTC precision 8, verified monetary sides, and four types of structured amount bounds. The buyer shortlist excludes offers outside advertised ranges. Fixed BTC amounts need final validation in Bisq.
+
+GET /market-price/quotes supplies a reference observed at local read time, without an authenticated upstream price timestamp. Dynamic estimates are labeled upstream_age_verified=false. FloatPriceSpec percentage is a fractional markup (0.025 = 2.5%).
+
+GET /api/merchant-quote creates an advisory merchant ask price from a recent local reference and supervised margin in basis points. It never publishes an offer.

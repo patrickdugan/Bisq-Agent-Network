@@ -4,7 +4,7 @@
 
 The long-term ambition is a distribution network that can make self-custodial P2P trading available through many wallets and communities. This repository implements the first verifiable slice: a read-only Bisq 2 adapter, deterministic buyer matching, a merchant-supply planner, human-reviewed outreach drafts, event counts and a local web dashboard.
 
-**Status: v0.1 research prototype.** This project is independent and unaffiliated with the Bisq DAO. The MIT license covers the original adapter and application code; Bisq 2 itself is AGPL-3.0.
+**Status: v0.2 research prototype.** This project is independent and unaffiliated with the Bisq DAO. The MIT license covers the original adapter and application code; Bisq 2 itself is AGPL-3.0.
 
 ## Run it
 
@@ -13,6 +13,7 @@ Requires Python 3.11+. The demo has zero third-party runtime dependencies. From 
     PYTHONPATH=src python -m ban.cli report --currency PHP
     PYTHONPATH=src python -m ban.cli quote --currency PHP --amount 1000 --payment-method GCash
     PYTHONPATH=src python -m ban.cli plan --currency PHP
+    PYTHONPATH=src python -m ban.cli merchant-quote --currency PHP --fiat-amount 1000 --margin-bps 150
     PYTHONPATH=src python -m ban.cli serve --port 8088
 
 Then open http://127.0.0.1:8088.
@@ -36,7 +37,7 @@ macOS/Linux example:
     export BAN_BISQ_SESSION_ID=YOUR_CURRENT_SESSION_ID
     PYTHONPATH=src python -m ban.cli offers --currency PHP
 
-The upstream resource is GET /offerbook/markets/{currencyCode}/offers. Bisq 2 session headers are Bisq-Client-Id and Bisq-Session-Id. Sessions expire; refresh through Bisq's authorized pairing/session flow. The adapter intentionally refuses remote hosts and redirects, limits response size and never exposes a method that writes to Bisq.
+The upstream endpoints are GET /offerbook/markets/{currencyCode}/offers and GET /market-price/quotes. The latter exposes a locally fetched reference whose original source age is unverified. Bisq 2 session headers are Bisq-Client-Id and Bisq-Session-Id. Sessions expire; refresh through Bisq's authorized pairing/session flow. The adapter intentionally refuses remote hosts and redirects, limits response size and never exposes a method that writes to Bisq.
 
 If your node does not expose the endpoint or returns 401/403, consult the version-specific API documentation in Bisq. Upstream source references are in docs/SOURCES.md.
 
@@ -49,7 +50,7 @@ If your node does not expose the endpoint or returns 401/403, consult the versio
     PYTHONPATH=src python -m ban.cli policy publish_offer
     PYTHONPATH=src python -m ban.cli policy release_btc
 
-The concierge only ranks makers explicitly selling BTC. Fixed-price bids are decoded from structured price quotes; dynamic-price offers are labeled as requiring a fresh quote. Trade-size eligibility and settlement are intentionally not asserted.
+The concierge ranks makers explicitly selling BTC. Fiat prices use four decimal places, and fractional markups are applied to locally fetched reference prices. Advertised amount bounds are checked, while executable size, reputation ceilings and payment settlement require confirmation in Bisq.
 
 ## Optional local GTM ledger
 
@@ -68,6 +69,10 @@ GitHub Actions runs the offline suite for each push and pull request.
 ## Current capabilities
 
 - Bisq 2 local REST GET adapter with paired-session headers
+- Strict four-decimal fiat and eight-decimal BTC price contracts
+- Advertised BaseSide/QuoteSide fixed and range amounts
+- Optional dynamic estimates from the local reference feed (upstream age unknown)
+- Read-only merchant ask-price drafts with bounded basis-point spreads
 - Exact decimal conversion of structured fixed-price offers
 - Buyer offer matching by maker direction and payment method
 - Deterministic supply-gap planner and merchant outreach drafts
@@ -78,7 +83,7 @@ GitHub Actions runs the offline suite for each push and pull request.
 ## Next milestones
 
 1. Bisq 2 contract tests against a pinned version and real redacted fixtures.
-2. Read-only market-price stream support for dynamic offers and validated trade-size bounds.
+2. Verify market oracle freshness and reputation/trade limits against a pinned released Bisq 2 node.
 3. Optional merchant quote publication through a scoped capability and approval gateway, with upstream integration tests.
 4. Audited, provider-bound payment attestations using selective disclosure and replay-safe nullifiers.
 5. Wallet SDK, merchant directory consent tools and localized GTM experiments.
