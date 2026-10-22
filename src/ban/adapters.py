@@ -73,7 +73,7 @@ class Bisq2LocalAdapter:
             headers["Bisq-Client-Id"] = self.client_id
             headers["Bisq-Session-Id"] = self.session_id
         req = urllib.request.Request(url, headers=headers, method="GET")
-        opener = urllib.request.build_opener(_NoRedirects)
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirects)
         try:
             with opener.open(req, timeout=5) as response:
                 if response.status != 200:
