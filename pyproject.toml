@@ -16,3 +16,6 @@ ban = "ban.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+ban = ["static/*.html", "static/*.js", "static/*.css"]

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Bisq Agent Network | Market Operations</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><span class="mark">B<span>A</span>N</span><span>Bisq Agent Network <small>INDEPENDENT RESEARCH BUILD</small></span></div>
+    <span id="sourceBadge" class="source">LOADING DATA</span>
+  </header>
+  <main>
+    <section class="hero">
+      <div class="eyebrow">DECENTRALIZED MARKET INTELLIGENCE / READ-ONLY v0.1</div>
+      <h1>Liquidity is the product.<br><em>Agents are the distribution.</em></h1>
+      <p>A local command center for merchant supply, buyer discovery and agent authorization. Every trade stays under human control.</p>
+      <div class="actions"><button id="refresh">Refresh market</button><span id="status" role="status">Connecting to local data source…</span></div>
+    </section>
+    <section class="controls" aria-label="Market selector">
+      <div><label for="currency">MARKET</label><select id="currency"><option value="PHP">BTC / PHP</option></select></div>
+      <div class="note">Live mode requires a locally paired Bisq 2 node. Fixture values are synthetic and are never advertised as executable quotes.</div>
+    </section>
+    <section class="metrics" aria-label="Market coverage">
+      <div class="metric"><span>ALL OFFERS</span><strong id="total">–</strong></div>
+      <div class="metric"><span>BTC SELL OFFERS</span><strong id="sellers">–</strong></div>
+      <div class="metric"><span>BTC BUY OFFERS</span><strong id="buyers">–</strong></div>
+      <div class="metric"><span>PAYMENT RAILS</span><strong id="rails">–</strong></div>
+    </section>
+    <section class="content">
+      <section class="panel">
+        <div class="section-head"><h2>Buyer concierge</h2><span class="chip">INDICATIVE</span></div>
+        <form id="quoteForm">
+          <div class="fields">
+            <label>Amount in fiat <input id="amount" type="number" min="0.01" max="1000000000" step="any" value="1000" required></label>
+            <label>Payment method <select id="payment"><option value="">Any listed method</option><option value="GCash">GCash</option><option value="Bank Transfer">Bank Transfer</option></select></label>
+          </div>
+          <button type="submit">Compare BTC sellers <span aria-hidden="true">↗</span></button>
+        </form>
+        <p class="fine">Size eligibility, deposit limits and seller availability require verification in Bisq. This interface cannot execute a trade.</p>
+        <div id="matches" aria-live="polite" class="list"></div>
+      </section>
+      <section class="panel">
+        <div class="section-head"><h2>Merchant supply</h2><span class="chip">SNAPSHOT</span></div>
+        <div id="offers" class="list" aria-live="polite"></div>
+      </section>
+    </section>
+    <section class="content bottom">
+      <section class="panel">
+        <div class="section-head"><h2>Agentic GTM planner</h2><span class="chip">DRAFT TASKS</span></div>
+        <div id="plan" class="list"></div>
+      </section>
+      <section class="panel">
+        <div class="section-head"><h2>Local funnel ledger</h2><span class="chip">OPERATOR REPORTED</span></div>
+        <div id="ledger" class="list"></div>
+        <p class="fine">The ledger stores event types and acquisition channels. Trade completion records are manually reported, not independently verified.</p>
+      </section>
+    </section>
+  </main>
+  <footer>
+    <span>OPEN SOURCE · HUMAN APPROVAL · LOCAL FIRST</span>
+    <span>Unaffiliated with the Bisq DAO. Proof verification and financial execution remain disabled.</span>
+  </footer>
+</body>
+</html>

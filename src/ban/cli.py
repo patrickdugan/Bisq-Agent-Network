@@ -7,6 +7,7 @@ from .concierge import shortlist
 from .gtm import market_report, outreach_draft
 from .ledger import metrics, record
 from .models import InvalidData
+from .planner import plan
 from .policy import evaluate
 
 
@@ -15,7 +16,7 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--source", choices=("fixture", "bisq2"), default=None,
                    help="fixture (synthetic) or bisq2 (local paired node)")
     sub = p.add_subparsers(dest="command", required=True)
-    for name in ("offers", "report"):
+    for name in ("offers", "report", "plan"):
         sp = sub.add_parser(name)
         sp.add_argument("--currency", default="PHP")
     sp = sub.add_parser("quote")
@@ -55,6 +56,8 @@ def run(args: argparse.Namespace) -> dict:
         return snapshot.as_dict()
     if args.command == "report":
         return market_report(snapshot)
+    if args.command == "plan":
+        return plan(snapshot, metrics(os.getenv("BAN_DB", "ban.sqlite3")))
     if args.command == "quote":
         return shortlist(snapshot, args.amount, args.payment_method)
     raise ValueError("unsupported command")
