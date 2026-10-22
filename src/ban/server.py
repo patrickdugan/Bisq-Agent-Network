@@ -13,6 +13,7 @@ from .gtm import market_report
 from .ledger import metrics
 from .models import InvalidData, currency_code
 from .planner import plan
+from .merchant import draft_merchant_quote
 
 STATIC = Path(__file__).with_name("static")
 STATIC_FILES = {
@@ -55,6 +56,10 @@ def handler_class(source: str | None = None, db_path: str | None = None):
             self.json(405, {"error": "read_only", "message": "This service accepts GET only"})
 
         def do_GET(self):
+            port = self.server.server_port
+            if self.headers.get("Host") not in (f"127.0.0.1:{port}", f"localhost:{port}"):
+                self.json(403, {"error": "invalid_host"})
+                return
             url = urlsplit(self.path)
             if url.path in STATIC_FILES:
                 name, content_type = STATIC_FILES[url.path]
@@ -75,6 +80,14 @@ def handler_class(source: str | None = None, db_path: str | None = None):
                 if url.path == "/api/metrics":
                     self.json(200, metrics(ledger_path))
                     return
+                if url.path == "/api/merchant-quote":
+                    result = draft_merchant_quote(
+                        adapter.reference_price(currency),
+                        fiat_amount=query.get("fiat_amount", [""])[0],
+                        margin_bps=query.get("margin_bps", [""])[0],
+                    )
+                    self.json(200, result)
+                    return
                 if url.path in ("/api/offers", "/api/report", "/api/quote", "/api/plan"):
                     snapshot = adapter.offers(currency)
                     if url.path == "/api/offers":
@@ -86,7 +99,11 @@ def handler_class(source: str | None = None, db_path: str | None = None):
                     else:
                         amount = query.get("amount", [""])[0]
                         payment = query.get("payment", [""])[0]
-                        result = shortlist(snapshot, amount, payment)
+                        try:
+                            reference = adapter.reference_price(currency)
+                        except AdapterError:
+                            reference = None
+                        result = shortlist(snapshot, amount, payment, reference)
                     self.json(200, result)
                     return
                 self.json(404, {"error": "unknown_route"})
