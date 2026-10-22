@@ -73,6 +73,14 @@ The software cannot independently verify the operator's consent attestation. Pro
 
 Events are aggregate, manually reported counts, recorded in a local SQLite database. They carry no names, payer details or communications. The default database filename is ignored by git.
 
+## Cloud pod
+
+A disposable GitHub-hosted Linux runner launches the dashboard inside a rootless Docker container and exercises its actual HTTP endpoints through a **synthetic Bisq 2 mock node**. It uploads sanitized smoke-test JSON and a local-node contract report. The service is loopback-only and stops when the job ends.
+
+See [cloud/README.md](cloud/README.md) and the [Cloud Pod Smoke workflow](.github/workflows/cloud-pod.yml).
+
+For a persistent Linux VPS with a separately paired Bisq 2 REST node on the same host, use the [cloud/compose.yaml](cloud/compose.yaml) recipe and access the dashboard through SSH port forwarding. The repository has no access to any particular VPS or provider account.
+
 ## Tests
 
     PYTHONPATH=src python -m unittest discover -s tests -v

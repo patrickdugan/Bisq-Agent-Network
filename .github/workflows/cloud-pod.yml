@@ -1,0 +1,117 @@
+name: Cloud Pod Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'cloud/**'
+      - 'src/**'
+      - 'tests/**'
+      - 'fixtures/**'
+      - 'pyproject.toml'
+      - '.github/workflows/cloud-pod.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: CPU Docker pod end-to-end
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run offline tests
+        run: PYTHONPATH=src python -m unittest discover -s tests -q
+
+      - name: Build CPU-only application pod
+        run: docker build -f cloud/Dockerfile -t ban-cloud-pod:ci .
+
+      - name: Launch synthetic Bisq REST on loopback
+        shell: bash
+        run: |
+          set -euo pipefail
+          python cloud/mock_bisq.py > "$RUNNER_TEMP/fake-bisq.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/fake-bisq.pid"
+          for i in $(seq 1 20); do
+            if curl --fail --silent --output /dev/null \
+              --header 'Bisq-Client-Id: ci-mock-client' \
+              --header 'Bisq-Session-Id: ci-mock-session' \
+              'http://127.0.0.1:8090/api/v1/config/capabilities'; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo 'Synthetic Bisq mock did not start' >&2
+          exit 1
+
+      - name: Launch dashboard Docker container
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/ban-state"
+          sudo chown 10001:10001 "$RUNNER_TEMP/ban-state"
+          docker run -d --name ban-cloud-pod \
+            --network host \
+            --read-only --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --pids-limit 128 --memory 512m \
+            --tmpfs /tmp:rw,noexec,nosuid,size=32m \
+            --mount "type=bind,src=$RUNNER_TEMP/ban-state,dst=/data" \
+            --env BAN_SOURCE=bisq2 \
+            --env BAN_DB=/data/ban.sqlite3 \
+            --env BAN_BISQ_API_URL=http://127.0.0.1:8090/api/v1 \
+            --env BAN_BISQ_CLIENT_ID=ci-mock-client \
+            --env BAN_BISQ_SESSION_ID=ci-mock-session \
+            ban-cloud-pod:ci
+          for i in $(seq 1 25); do
+            if curl --fail --silent --output /dev/null \
+              'http://127.0.0.1:8088/api/health'; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs ban-cloud-pod
+          exit 1
+
+      - name: Exercise dashboard and mock Bisq contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p cloud-report
+          python cloud/smoke.py --report cloud-report/smoke.json
+          docker exec ban-cloud-pod ban --source bisq2 node-check --currency PHP \
+            > cloud-report/node-check.json
+          python - cloud-report/node-check.json <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              data=json.load(handle)
+          assert data["contract_checks"] == "passed_locally", data
+          assert data["capabilities"]["api_version"].startswith("SYNTHETIC"), data
+          assert data["financial_execution"] == "disabled"
+          print("Mock-node Bisq 2 contract check PASSED.")
+          PY
+
+      - name: Save sanitized cloud pod reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ban-cloud-pod-report
+          path: cloud-report/*.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Tear down cloud pod
+        if: always()
+        shell: bash
+        run: |
+          docker rm -f ban-cloud-pod 2>/dev/null || true
+          if [ -f "$RUNNER_TEMP/fake-bisq.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/fake-bisq.pid")" 2>/dev/null || true
+          fi

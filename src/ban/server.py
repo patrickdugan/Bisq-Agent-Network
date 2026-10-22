@@ -126,12 +126,15 @@ def handler_class(source: str | None = None, db_path: str | None = None):
 def make_server(port: int = 8088, source: str | None = None, db_path: str | None = None):
     if not (0 <= port <= 65535):
         raise ValueError("port must be in 0..65535")
-    return ThreadingHTTPServer(("127.0.0.1", port), handler_class(source, db_path))
+    host = os.getenv("BAN_BIND_HOST", "127.0.0.1")
+    if host not in ("127.0.0.1", "0.0.0.0"):
+        raise ValueError("BAN_BIND_HOST must be 127.0.0.1 or 0.0.0.0")
+    return ThreadingHTTPServer((host, port), handler_class(source, db_path))
 
 
 def serve(port: int = 8088, source: str | None = None) -> None:
     with make_server(port, source) as server:
-        print("BAN read-only dashboard at http://127.0.0.1:" + str(server.server_port))
+        print("BAN read-only dashboard at http://127.0.0.1:" + str(server.server_port), flush=True)
         print("Source: " + ("BAN_SOURCE environment" if source is None else source))
         try:
             server.serve_forever(poll_interval=0.25)

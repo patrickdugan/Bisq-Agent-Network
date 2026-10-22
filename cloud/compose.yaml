@@ -1,0 +1,32 @@
+# Linux VM / pod host, with separately paired Bisq 2 REST on localhost.
+# Dashboard and node stay bound to loopback and accessed via SSH forwarding.
+services:
+  ban:
+    build:
+      context: ..
+      dockerfile: cloud/Dockerfile
+    image: bisq-agent-network:local
+    container_name: bisq-agent-network
+    network_mode: host
+    environment:
+      BAN_SOURCE: bisq2
+      BAN_BIND_HOST: "127.0.0.1"
+      BAN_BISQ_API_URL: "http://127.0.0.1:8090/api/v1"
+      BAN_BISQ_CLIENT_ID: "$BAN_BISQ_CLIENT_ID"
+      BAN_BISQ_SESSION_ID: "$BAN_BISQ_SESSION_ID"
+      BAN_DB: /data/ban.sqlite3
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 512m
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    volumes:
+      - ban_data:/data
+    restart: unless-stopped
+
+volumes:
+  ban_data:

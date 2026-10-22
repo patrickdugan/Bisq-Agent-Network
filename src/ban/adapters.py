@@ -18,7 +18,7 @@ class AdapterError(RuntimeError):
 
 class FixtureAdapter:
     def __init__(self, fixtures_dir: Path | None = None):
-        self.fixtures_dir = fixtures_dir or Path(__file__).resolve().parents[2] / "fixtures"
+        self.fixtures_dir = fixtures_dir or Path(os.getenv("BAN_FIXTURES_DIR", str(Path(__file__).resolve().parents[2] / "fixtures")))
 
     def offers(self, currency: str) -> Snapshot:
         code = currency_code(currency)

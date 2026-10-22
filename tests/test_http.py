@@ -1,6 +1,8 @@
 import json
 import tempfile
 from pathlib import Path
+import os
+from unittest.mock import patch
 import threading
 import unittest
 import urllib.error
@@ -88,6 +90,12 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(view["verification"], "operator_attested_not_independently_verified")
         self.assertNotIn(item["merchant_id"], json.dumps(view))
         self.assertNotIn("OperatorMerchant", json.dumps(view))
+
+    def test_reject_unsupported_bind_address(self):
+        with patch.dict(os.environ, {"BAN_BIND_HOST": "192.0.2.10"}):
+            from ban.server import make_server
+            with self.assertRaises(ValueError):
+                make_server(0, "fixture")
 
     def test_static_assets(self):
         with urllib.request.urlopen(self.root + "/", timeout=3) as response:
