@@ -6,7 +6,8 @@ import os
 from pathlib import Path
 import urllib.error
 import urllib.request
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, quote
+from .trade_status import TradeObservation, parse_statuses, validate_id
 
 from .models import Snapshot, currency_code, normalize_snapshot
 from .references import MarketReference, decode_reference
@@ -101,21 +102,50 @@ class Bisq2LocalAdapter:
         except (ValueError, UnicodeError):
             raise AdapterError("Bisq node returned invalid JSON") from None
 
+    def _get_json(self, path: str):
+        """Read one local API resource; never use a proxy or follow redirects."""
+        url = self.base_url + path
+        headers = {"Accept": "application/json", "User-Agent": "Bisq-Agent-Network/0.1"}
+        if self.client_id and self.session_id:
+            headers["Bisq-Client-Id"] = self.client_id
+            headers["Bisq-Session-Id"] = self.session_id
+        req = urllib.request.Request(url, headers=headers, method="GET")
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirects)
+        try:
+            with opener.open(req, timeout=5) as response:
+                if response.status != 200:
+                    raise AdapterError("Bisq node returned an unexpected HTTP status")
+                raw = response.read(1_048_577)
+                if len(raw) > 1_048_576:
+                    raise AdapterError("upstream response exceeds 1 MiB")
+            return json.loads(raw)
+        except urllib.error.HTTPError as exc:
+            if exc.code in (401, 403):
+                raise AdapterError("Bisq node denied access; pair a client and refresh the session") from None
+            raise AdapterError("Bisq node returned HTTP " + str(exc.code)) from None
+        except (urllib.error.URLError, TimeoutError, OSError):
+            raise AdapterError("could not connect to local Bisq node") from None
+        except (ValueError, UnicodeError):
+            raise AdapterError("Bisq node returned invalid JSON") from None
+
     def offers(self, currency: str) -> Snapshot:
         code = currency_code(currency)
-        data = self._get_json("/offerbook/markets/" + code + "/offers")
-        try:
-            return normalize_snapshot(data, code, "BISQ2_LOCAL")
-        except ValueError:
-            raise AdapterError("invalid local Bisq offerbook response") from None
+        payload = self._get_json("/offerbook/markets/" + code + "/offers")
+        return normalize_snapshot(payload, code, "BISQ2_LOCAL")
 
-    def reference_price(self, currency: str) -> MarketReference:
-        code = currency_code(currency)
-        data = self._get_json("/market-price/quotes")
-        try:
-            return decode_reference(data, code, "BISQ2_LOCAL")
-        except ValueError:
-            raise AdapterError("missing or invalid Bisq market price reference") from None
+    def trade_status(self, offer_id: str) -> tuple[TradeObservation, ...]:
+        """Experimental read-only GET; requires a Bisq fork exposing /trades/status.
+
+        The existing Bisq TRADES grant is broad and ALSO permits trade writes.
+        This method is intentionally not used by automated workflows and never
+        interprets an empty result as proof that a trade can safely be retried.
+        """
+        validate_id(offer_id)
+        if not self.client_id or not self.session_id:
+            raise AdapterError("paired client and session required for experimental trade observation")
+        path = "/trades/status?offerId=" + quote(offer_id, safe="")
+        payload = self._get_json(path)
+        return parse_statuses(payload, offer_id)
 
 
 def make_adapter(source: str | None = None) -> FixtureAdapter | Bisq2LocalAdapter:
