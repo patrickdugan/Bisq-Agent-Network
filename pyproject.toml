@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bisq-agent-network"
+version = "0.1.0"
+description = "Read-only, human-controlled merchant and buyer tooling for Bisq 2"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "Patrick Dugan"}]
+dependencies = []
+
+[project.scripts]
+ban = "ban.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
