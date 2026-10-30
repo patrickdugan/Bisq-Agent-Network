@@ -76,6 +76,8 @@ def parser() -> argparse.ArgumentParser:
     sp.add_argument("--db", default=os.getenv("BAN_DB", "ban.sqlite3"))
     sp = sub.add_parser("serve")
     sp.add_argument("--port", type=int, default=8088)
+    sp = sub.add_parser("cashout-demo", help="simulated cashout flow and refused attacks (synthetic fixture only)")
+    sp.add_argument("--fixture", default="fixtures/cashout_demo.json")
     return p
 
 
@@ -107,6 +109,9 @@ def run(args: argparse.Namespace) -> dict:
         return purge_expired(args.db)
     if args.command == "cohort":
         return cohort_report(args.db, args.currency)
+    if args.command == "cashout-demo":
+        from .sim.demo import run_demo  # simulation only; never reached by other commands
+        return run_demo(args.fixture)
     adapter = make_adapter(args.source)
     if args.command == "node-check":
         return check_local_node(adapter, args.currency)
@@ -136,9 +141,12 @@ def main() -> None:
             from .server import serve
             serve(args.port, args.source)
             return
-        print(json.dumps(run(args), indent=2, ensure_ascii=False))
+        result = run(args)
+        print(json.dumps(result, indent=2, ensure_ascii=False))
     except (AdapterError, InvalidData, CohortError, ValueError) as exc:
         raise SystemExit("Error: " + str(exc)) from None
+    if args.command == "cashout-demo" and not result["all_attacks_refused"]:
+        raise SystemExit("Error: an attack was not refused")
 
 
 if __name__ == "__main__":

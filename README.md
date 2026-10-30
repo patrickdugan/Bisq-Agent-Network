@@ -55,6 +55,14 @@ If your node does not expose the endpoint or returns 401/403, consult the versio
 
 The concierge ranks makers explicitly selling BTC. Fiat prices use four decimal places, and fractional markups are applied to locally fetched reference prices. Advertised amount bounds are checked, while executable size, reputation ceilings and payment settlement require confirmation in Bisq.
 
+## Cashout slice (simulation only)
+
+A sender pays BTC to a handle such as `alice@pay.test`; a liquidity provider that *buys* BTC pays the recipient's local wallet. This slice builds the alias, private intent, BUY-side quote and payout-ledger contracts against a **simulated** provider and a mock rail:
+
+    PYTHONPATH=src python -m ban.cli cashout-demo --fixture fixtures/cashout_demo.json
+
+The demo prints every transition, then replays 30 attacks (rollback, equivocation, substituted provider key, wrong output, replayed outpoint, duplicate payout, rail timeout and others) and exits non-zero unless all are refused. Real payouts stay DENY in the policy, and Jawwal Pay capabilities are unverified. See docs/CASHOUT.md.
+
 ## Opt-in local merchant cohort
 
 Merchants participate through explicit consent, attested by the operator. Records use pseudonymous aliases, generic payment rails, random local IDs and 90-day consent windows. The web dashboard shows only aggregate cohort metrics.
@@ -103,6 +111,7 @@ GitHub Actions runs the offline suite for each push and pull request.
 - Opt-in merchant cohort CLI with explicit consent, 90-day retention, status and withdrawal
 - Aggregate cohort dashboard, segregated from Bisq offerbook liquidity
 - Local Bisq 2 node contract smoke test against capabilities, offerbook and market price APIs
+- Simulated cashout slice: Nostr-associated alias records, payout intents, BUY-side shortlist, signed quotes and a replay-safe payout ledger (docs/CASHOUT.md)
 
 ## Next milestones
 

@@ -1,0 +1,2 @@
+# Vendored upstream bytes (CRLF): keep exactly as fetched so the recorded SHA-256 holds.
+fixtures/bip340_test_vectors.csv -text

@@ -1,0 +1,6 @@
+Vendored BIP340 test vectors (verification and signing).
+Source: https://raw.githubusercontent.com/bitcoin/bips/200f9b26fe0a2f235a2af8b30c4be9f12f6bc9cb/bip-0340/test-vectors.csv
+Upstream: https://github.com/bitcoin/bips/blob/200f9b26fe0a2f235a2af8b30c4be9f12f6bc9cb/bip-0340/test-vectors.csv
+Commit: 200f9b26fe0a2f235a2af8b30c4be9f12f6bc9cb (latest commit touching the file as of 2026-10-30)
+SHA-256 (upstream bytes, CRLF line endings): 34c9d1d9c3a88d524bc80778540dc43f8306ec249a7485293063c376db851c2d
+Fetched: 2026-10-30. tests/test_cashout_bip340.py re-checks this hash after normalizing line endings to CRLF; .gitattributes keeps the bytes unconverted.

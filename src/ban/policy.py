@@ -21,7 +21,9 @@ class PolicyResult:
 _READ = frozenset({"read_offers", "rank_offers", "read_metrics", "draft_outreach", "draft_merchant_advice"})
 _REVIEW = frozenset({"contact_merchant", "publish_offer", "send_chat", "change_quote"})
 _DENY = frozenset({"take_offer", "release_btc", "confirm_fiat", "spend_funds",
-                   "access_private_keys", "verify_payment_proof", "import_private_contacts"})
+                   "access_private_keys", "verify_payment_proof", "import_private_contacts",
+                   # Cashout: only the simulated provider in ban.sim exercises these; no executor exists.
+                   "authorize_local_payout", "submit_local_payout"})
 
 
 def evaluate(action: str) -> PolicyResult:

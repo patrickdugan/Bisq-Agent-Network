@@ -1,0 +1,419 @@
+{
+  "source": "SYNTHETIC_FIXTURE",
+  "note": "Synthetic cashout world. Every key derives from a public label (ban.sim.testkeys); no real keys, funds, relays, NIP-05 domain or Jawwal Pay API. Jawwal capabilities are unverified.",
+  "network": "regtest",
+  "now": 1793000000,
+  "tip_height": 200,
+  "domain": "pay.test",
+  "handle": "alice",
+  "relays": [
+    "wss://relay-a.test",
+    "wss://relay-b.test"
+  ],
+  "keys": {
+    "alice": "sim/alice",
+    "alice_recovery": "sim/alice-recovery",
+    "sender": "sim/sender",
+    "provider": "sim/provider-p1",
+    "other_provider": "sim/provider-p2",
+    "attacker": "sim/attacker"
+  },
+  "nip05": {
+    "pay.test": {
+      "names": {
+        "alice": "9ba8de987e48ce349c87e0d9cb0bb4f8ed1521506c023dcdad3ef4cd222c76c7"
+      },
+      "relays": {
+        "9ba8de987e48ce349c87e0d9cb0bb4f8ed1521506c023dcdad3ef4cd222c76c7": [
+          "wss://relay-a.test"
+        ]
+      }
+    }
+  },
+  "alias": {
+    "valid_seconds": 2592000,
+    "rail": "jawwal_pay",
+    "currency": "ILS",
+    "exponent": 2,
+    "destination": "SYNTHETIC-JAWWAL-WALLET-0001"
+  },
+  "provider": {
+    "float_minor": 500000,
+    "fee_bps": 100,
+    "rate_minor_per_btc": 38000000,
+    "min_conf": 2,
+    "max_tip_lag": 2,
+    "quote_ttl_blocks": 6,
+    "quote_ttl_seconds": 3600,
+    "offer_id": "synthetic-ils-buy-p1-003"
+  },
+  "intent": {
+    "amount_mode": "receive_exact",
+    "amount": 5000,
+    "max_total_fee_sats": 5000,
+    "max_fee_bps": 150,
+    "min_net_payout_minor": 5000,
+    "refund_script": "00141111111111111111111111111111111111111111",
+    "expiry_seconds": 7200
+  },
+  "relay_disagreement_threshold_minor": 100000,
+  "offerbook": [
+    {
+      "bisqEasyOffer": {
+        "id": "synthetic-ils-sell-001",
+        "direction": "SELL",
+        "market": {
+          "baseCurrencyCode": "BTC",
+          "quoteCurrencyCode": "ILS"
+        },
+        "amountSpec": {
+          "type": "QuoteSideRangeAmountSpec",
+          "minAmount": 100000,
+          "maxAmount": 20000000
+        },
+        "priceSpec": {
+          "type": "FixPriceSpec",
+          "priceQuote": {
+            "value": 3950000000,
+            "precision": 4,
+            "market": {
+              "baseCurrencyCode": "BTC",
+              "quoteCurrencyCode": "ILS"
+            },
+            "baseSideMonetary": {
+              "type": "Coin",
+              "value": 100000000,
+              "code": "BTC",
+              "precision": 8
+            },
+            "quoteSideMonetary": {
+              "type": "Fiat",
+              "value": 3950000000,
+              "code": "ILS",
+              "precision": 4
+            }
+          }
+        }
+      },
+      "userProfile": {
+        "nickName": "DemoSellerA"
+      },
+      "formattedQuoteAmount": "ILS 10 - 2000",
+      "quoteSidePaymentMethods": [
+        "SYNTHETIC local wallet"
+      ],
+      "reputationScore": {
+        "totalScore": 1000
+      }
+    },
+    {
+      "bisqEasyOffer": {
+        "id": "synthetic-ils-sell-002",
+        "direction": "SELL",
+        "market": {
+          "baseCurrencyCode": "BTC",
+          "quoteCurrencyCode": "ILS"
+        },
+        "amountSpec": {
+          "type": "QuoteSideRangeAmountSpec",
+          "minAmount": 100000,
+          "maxAmount": 20000000
+        },
+        "priceSpec": {
+          "type": "FixPriceSpec",
+          "priceQuote": {
+            "value": 3920000000,
+            "precision": 4,
+            "market": {
+              "baseCurrencyCode": "BTC",
+              "quoteCurrencyCode": "ILS"
+            },
+            "baseSideMonetary": {
+              "type": "Coin",
+              "value": 100000000,
+              "code": "BTC",
+              "precision": 8
+            },
+            "quoteSideMonetary": {
+              "type": "Fiat",
+              "value": 3920000000,
+              "code": "ILS",
+              "precision": 4
+            }
+          }
+        }
+      },
+      "userProfile": {
+        "nickName": "DemoSellerB"
+      },
+      "formattedQuoteAmount": "ILS 10 - 2000",
+      "quoteSidePaymentMethods": [
+        "SYNTHETIC local wallet"
+      ],
+      "reputationScore": {
+        "totalScore": 1000
+      }
+    },
+    {
+      "bisqEasyOffer": {
+        "id": "synthetic-ils-buy-p1-003",
+        "direction": "BUY",
+        "market": {
+          "baseCurrencyCode": "BTC",
+          "quoteCurrencyCode": "ILS"
+        },
+        "amountSpec": {
+          "type": "QuoteSideRangeAmountSpec",
+          "minAmount": 100000,
+          "maxAmount": 20000000
+        },
+        "priceSpec": {
+          "type": "FixPriceSpec",
+          "priceQuote": {
+            "value": 3800000000,
+            "precision": 4,
+            "market": {
+              "baseCurrencyCode": "BTC",
+              "quoteCurrencyCode": "ILS"
+            },
+            "baseSideMonetary": {
+              "type": "Coin",
+              "value": 100000000,
+              "code": "BTC",
+              "precision": 8
+            },
+            "quoteSideMonetary": {
+              "type": "Fiat",
+              "value": 3800000000,
+              "code": "ILS",
+              "precision": 4
+            }
+          }
+        }
+      },
+      "userProfile": {
+        "nickName": "DemoCashoutP1"
+      },
+      "formattedQuoteAmount": "ILS 10 - 2000",
+      "quoteSidePaymentMethods": [
+        "SYNTHETIC local wallet"
+      ],
+      "reputationScore": {
+        "totalScore": 1000
+      }
+    },
+    {
+      "bisqEasyOffer": {
+        "id": "synthetic-ils-buy-p2-004",
+        "direction": "BUY",
+        "market": {
+          "baseCurrencyCode": "BTC",
+          "quoteCurrencyCode": "ILS"
+        },
+        "amountSpec": {
+          "type": "QuoteSideRangeAmountSpec",
+          "minAmount": 100000,
+          "maxAmount": 20000000
+        },
+        "priceSpec": {
+          "type": "FixPriceSpec",
+          "priceQuote": {
+            "value": 3810000000,
+            "precision": 4,
+            "market": {
+              "baseCurrencyCode": "BTC",
+              "quoteCurrencyCode": "ILS"
+            },
+            "baseSideMonetary": {
+              "type": "Coin",
+              "value": 100000000,
+              "code": "BTC",
+              "precision": 8
+            },
+            "quoteSideMonetary": {
+              "type": "Fiat",
+              "value": 3810000000,
+              "code": "ILS",
+              "precision": 4
+            }
+          }
+        }
+      },
+      "userProfile": {
+        "nickName": "DemoCashoutP2"
+      },
+      "formattedQuoteAmount": "ILS 10 - 2000",
+      "quoteSidePaymentMethods": [
+        "SYNTHETIC local wallet"
+      ],
+      "reputationScore": {
+        "totalScore": 1000
+      }
+    },
+    {
+      "bisqEasyOffer": {
+        "id": "synthetic-ils-buy-p1-005",
+        "direction": "BUY",
+        "market": {
+          "baseCurrencyCode": "BTC",
+          "quoteCurrencyCode": "ILS"
+        },
+        "amountSpec": {
+          "type": "QuoteSideRangeAmountSpec",
+          "minAmount": 100000,
+          "maxAmount": 20000000
+        },
+        "priceSpec": {
+          "type": "FixPriceSpec",
+          "priceQuote": {
+            "value": 3820000000,
+            "precision": 4,
+            "market": {
+              "baseCurrencyCode": "BTC",
+              "quoteCurrencyCode": "ILS"
+            },
+            "baseSideMonetary": {
+              "type": "Coin",
+              "value": 100000000,
+              "code": "BTC",
+              "precision": 8
+            },
+            "quoteSideMonetary": {
+              "type": "Fiat",
+              "value": 3820000000,
+              "code": "ILS",
+              "precision": 4
+            }
+          }
+        }
+      },
+      "userProfile": {
+        "nickName": "DemoCashoutP1Stale"
+      },
+      "formattedQuoteAmount": "ILS 10 - 2000",
+      "quoteSidePaymentMethods": [
+        "SYNTHETIC local wallet"
+      ],
+      "reputationScore": {
+        "totalScore": 1000
+      }
+    },
+    {
+      "bisqEasyOffer": {
+        "id": "synthetic-ils-buy-p1-006",
+        "direction": "BUY",
+        "market": {
+          "baseCurrencyCode": "BTC",
+          "quoteCurrencyCode": "ILS"
+        },
+        "amountSpec": {
+          "type": "QuoteSideRangeAmountSpec",
+          "minAmount": 100000,
+          "maxAmount": 20000000
+        },
+        "priceSpec": {
+          "type": "FixPriceSpec",
+          "priceQuote": {
+            "value": 3790000000,
+            "precision": 4,
+            "market": {
+              "baseCurrencyCode": "BTC",
+              "quoteCurrencyCode": "ILS"
+            },
+            "baseSideMonetary": {
+              "type": "Coin",
+              "value": 100000000,
+              "code": "BTC",
+              "precision": 8
+            },
+            "quoteSideMonetary": {
+              "type": "Fiat",
+              "value": 3790000000,
+              "code": "ILS",
+              "precision": 4
+            }
+          }
+        }
+      },
+      "userProfile": {
+        "nickName": "DemoCashoutP1Second"
+      },
+      "formattedQuoteAmount": "ILS 10 - 2000",
+      "quoteSidePaymentMethods": [
+        "SYNTHETIC local wallet"
+      ],
+      "reputationScore": {
+        "totalScore": 1000
+      }
+    }
+  ],
+  "inventory": [
+    {
+      "offer_id": "synthetic-ils-buy-p1-003",
+      "key": "provider",
+      "age_seconds": 30,
+      "available_minor": 500000,
+      "max_per_payout_minor": 200000
+    },
+    {
+      "offer_id": "synthetic-ils-buy-p2-004",
+      "key": "other_provider",
+      "age_seconds": 30,
+      "available_minor": 500000,
+      "max_per_payout_minor": 200000
+    },
+    {
+      "offer_id": "synthetic-ils-buy-p1-005",
+      "key": "provider",
+      "age_seconds": 3600,
+      "available_minor": 500000,
+      "max_per_payout_minor": 200000
+    },
+    {
+      "offer_id": "synthetic-ils-buy-p1-006",
+      "key": "provider",
+      "age_seconds": 30,
+      "available_minor": 500000,
+      "max_per_payout_minor": 200000
+    },
+    {
+      "offer_id": "synthetic-ils-sell-001",
+      "key": "provider",
+      "age_seconds": 30,
+      "available_minor": 500000,
+      "max_per_payout_minor": 200000
+    }
+  ],
+  "attacks": [
+    "sell_maker_in_cashout_shortlist",
+    "nip05_binding_mismatch",
+    "forged_record_signature",
+    "rollback",
+    "equivocation",
+    "expired_record",
+    "revoked_record",
+    "domain_rebind_without_rotation",
+    "payto_tag",
+    "relay_disagreement_above_threshold",
+    "substituted_provider_key",
+    "wrong_network",
+    "wrong_recipient_commitment",
+    "quote_for_other_intent",
+    "fee_above_cap",
+    "expired_quote",
+    "deposit_script_reuse",
+    "wrong_output",
+    "replay_old_output",
+    "late_funding",
+    "stale_chain",
+    "insufficient_confirmations",
+    "verified_true_assertion",
+    "candidate_keys_in_production",
+    "outpoint_replay_across_quotes",
+    "duplicate_payout",
+    "rail_timeout",
+    "rail_failure",
+    "alias_revoked_before_payout",
+    "policy_denies_real_payout"
+  ]
+}
