@@ -34,6 +34,7 @@ from ..intent import SATS_PER_BTC, price
 from .demo import _NotRefused, _refused, happy_path
 from .ledger import IllegalTransition, LedgerError, ReplayRejected, State
 from .provider import ProviderRefused
+from .recheck import RECHECK_CASES, expect as _expect
 from .testkeys import TestKey
 from .world import CashoutWorld, _merge
 
@@ -345,6 +346,14 @@ class RegtestWorld(CashoutWorld):
         self.node.mine(blocks)
         self.now += seconds
 
+    def orphan_funding(self, claim: FundingClaim) -> None:
+        """``invalidateblock`` the funding block: the transaction goes back to the mempool."""
+        self.node.call("invalidateblock", [self.node.wallet_tx(claim.txid)["blockhash"]])
+
+    def reconfirm_funding(self, claim: FundingClaim) -> None:
+        """Mine ``min_conf`` blocks; the first re-includes the transaction in a new block."""
+        self.node.mine(self.cfg["provider"]["min_conf"])
+
 
 def regtest_world(node: RegtestRpc, fx: dict, root: Path, name: str, *, provider_label: str | None = None) -> RegtestWorld:
     """A world in ``root/name``. Deposit keys derive from the provider label and the quote
@@ -356,11 +365,6 @@ def regtest_world(node: RegtestRpc, fx: dict, root: Path, name: str, *, provider
 
 
 # ---------------------------------------------------------------- the cases
-
-def _expect(condition: bool, message: str) -> None:
-    if not condition:
-        raise _NotRefused(message)
-
 
 def _accepted_at_min_conf(w: RegtestWorld) -> dict:
     _, quote, _ = w.quote()
@@ -558,6 +562,7 @@ REGTEST_CASES: dict[str, Callable[[RegtestWorld], dict]] = {
     "reorg_orphans_funding_block": _reorg_orphans_funding_block,
     "rbf_replacement": _rbf_replacement,
     "outpoint_for_two_quotes": _outpoint_for_two_quotes,
+    **RECHECK_CASES,  # I9: the same cases also run on the fixture chain in normal CI
 }
 
 

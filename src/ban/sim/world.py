@@ -9,7 +9,7 @@ from typing import Any, Sequence
 from .. import canon
 from ..alias import (ALIAS_KIND, AliasResolver, FixtureNip05, FixtureRelay, PinStore, Resolution, event_id,
                      payout_commitment, rotation_digest)
-from ..evidence import FixtureChain, FixtureEvidence, FundingClaim
+from ..evidence import FixtureChain, FixtureEvidence, FundingClaim, synthetic_block_hash
 from ..intent import (DestinationEnrollmentV1, EvidencePolicyV1, InventoryAttestationV1, PayoutIntentV1,
                       ProviderQuoteV1, SignedInventory)
 from .provider import ReferenceProvider
@@ -222,6 +222,18 @@ class CashoutWorld:
     def advance(self, *, blocks: int = 0, seconds: int = 0) -> None:
         self.chain.mine(blocks)
         self.now += seconds
+
+    def orphan_funding(self, claim: FundingClaim) -> None:
+        """A reorg takes the funding's block off the active chain (here: onto a fork)."""
+        tx = self.chain.txs[claim.txid]
+        tx.block_hash = synthetic_block_hash(tx.block_height, "orphaned")
+
+    def reconfirm_funding(self, claim: FundingClaim) -> None:
+        """The same transaction confirms again in a new block, ``min_conf`` deep."""
+        tx = self.chain.txs[claim.txid]
+        tx.block_height = self.chain.tip_height + 1
+        tx.block_hash = synthetic_block_hash(tx.block_height)
+        self.chain.tip_height += self.cfg["provider"]["min_conf"]
 
 
 def fixture_inventory(entries: Sequence[dict], keys: dict[str, str], *, now: int, rail: str, currency: str,

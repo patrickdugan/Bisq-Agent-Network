@@ -200,7 +200,8 @@ class ReferenceProvider:
             return self.ledger.transition(quote_id, State.LATE_FUNDING, now=now, reason="quote already expired").state
         self._seen(row, acceptance.outpoint, acceptance.block_height, now)
         return self.ledger.transition(quote_id, State.FUNDING_ACCEPTED, now=now,
-                                      acceptance_digest=acceptance.digest(),
+                                      acceptance_digest=acceptance.digest(), acceptance_block=acceptance.block_hash,
+                                      funding_height=acceptance.block_height,
                                       confirmations=acceptance.confirmations).state
 
     def _seen(self, row: Row, outpoint: str | None, height: int | None, now: int) -> Row:
@@ -211,25 +212,29 @@ class ReferenceProvider:
         return self.ledger.transition(row.quote_id, State.FUNDING_SEEN, now=now, outpoint=outpoint,
                                       funding_height=height)
 
-    def _recheck_funding(self, row: Row, now: int) -> Row:
-        """Re-judge the accepted outpoint on the node's current active chain. A reorg
-        below ``min_conf`` before authorization sends the quote back to FUNDING_SEEN
-        (B.3 T5, B.5). Node errors other than a rejection propagate: nothing is paid."""
+    def _funding_rejection(self, row: Row, now: int) -> str | None:
+        """Re-judge the accepted outpoint on the node's current active chain (I9). Returns why
+        it no longer stands, or None if it passes in the block the current acceptance names.
+        A reorg that re-mines the funding elsewhere is a rejection too: the acceptance, and any
+        authorization binding it, must be redone. Node errors other than a rejection
+        propagate, so nothing is paid on them."""
         txid, vout = row.outpoint.rsplit(":", 1)
         try:
-            self.evidence.accept(row.quote, now=now, claim=FundingClaim(txid, int(vout)))
+            fresh = self.evidence.accept(row.quote, now=now, claim=FundingClaim(txid, int(vout)))
         except EvidenceRejected as exc:
-            return self.ledger.transition(row.quote_id, State.FUNDING_SEEN, now=now,
-                                          reason="funding no longer accepted: %s: %s" % (type(exc).__name__, exc))
-        return row
+            return "%s: %s" % (type(exc).__name__, exc)
+        if fresh.block_hash != row.acceptance_block:
+            return "funding is now in block %s, not the accepted %s" % (fresh.block_hash, row.acceptance_block)
+        return None
 
     # ------------------------------------------------------------ T6/T7
     def authorize(self, quote_id: str, *, now: int) -> State:
         row = self.ledger.get(quote_id)
-        if row.state is State.FUNDING_ACCEPTED:
-            row = self._recheck_funding(row, now)
-            if row.state is State.FUNDING_SEEN:
-                return row.state  # reorged below min_conf: on_funding re-accepts once the chain shows it again
+        if row.state in (State.FUNDING_ACCEPTED, State.HOLD):
+            reason = self._funding_rejection(row, now)
+            if reason is not None:  # B.3 T5, B.5: on_funding re-accepts once the chain shows it again
+                return self.ledger.transition(quote_id, State.FUNDING_SEEN, now=now, reason="funding_not_accepted",
+                                              detail=reason).state
         if row.state not in (State.FUNDING_ACCEPTED, State.HOLD):
             existing = self.ledger.authorization(quote_id)
             if existing is not None:
@@ -260,6 +265,14 @@ class ReferenceProvider:
                 raise ProviderRefused("alias revoked")
         except (AliasError, ProviderRefused) as exc:
             return self.ledger.transition(quote_id, State.HOLD, now=now, reason=str(exc)).state
+        # I9: the rail is called only after this call re-judged the funding on the current active
+        # chain, and only for an authorization that binds the current acceptance.
+        reason = self._funding_rejection(row, now)
+        if reason is None and auth.funding_acceptance_digest != row.acceptance_digest:
+            reason = "authorization binds a stale acceptance"
+        if reason is not None:
+            return self.ledger.transition(quote_id, State.HOLD, now=now, reason="funding_not_accepted",
+                                          detail=reason).state
         request = sha256(b"CAG-RAIL-REQUEST-V1\x00" + auth.encode()).hexdigest()
         self.ledger.begin_attempt(quote_id, request, now=now)  # write-ahead, before the rail call
         try:

@@ -73,8 +73,20 @@ It exits non-zero if any attack is not refused or any score line misses its orac
 - Amounts are fixed at the quote (I6). Funding below `quote_created_height` is refused (I7).
   The alias seq at authorization must be at least the quote's, and a revoked alias or a changed
   commitment sends the payout to `HOLD` (I8).
-- Crash recovery: an authorized-but-unsent row is sent once with the same key; a sent row with
-  no recorded response becomes `PAYOUT_UNKNOWN`.
+- **I9:** `rail.submit` runs only if the same `submit()` call, before `begin_attempt`, re-judged
+  the funding outpoint on the node's current active chain and it passed in the block that the
+  current acceptance names. The authorization being submitted must also bind the current
+  acceptance digest. `ReferenceProvider._funding_rejection` is the one re-judgment. `authorize()`
+  runs it from `FUNDING_ACCEPTED` and from `HOLD`, and a rejection goes to `FUNDING_SEEN`. (The
+  `HOLD -> FUNDING_SEEN` edge is a deviation from B.4.) `submit()` runs it from
+  `PAYOUT_AUTHORIZED`, and a rejection goes to `HOLD` with reason `funding_not_accepted`; the
+  next `authorize()` then drops the quote to `FUNDING_SEEN`. Funding that is re-mined in another
+  block counts as a rejection, so it must be re-accepted. Re-authorizing then rebinds the unsent
+  authorization to the new acceptance digest under the same idempotency key. Once a rail attempt
+  exists, the authorization never changes (`DuplicatePayout`), and a reorg after submission is
+  the provider's loss (B.5).
+- Crash recovery: an authorized-but-unsent row is sent once with the same key, after the I9
+  re-judgment; a sent row with no recorded response becomes `PAYOUT_UNKNOWN`.
 
 ## Contracts
 
@@ -157,6 +169,7 @@ Every F.3 item has a test in `tests/test_cashout_*.py`:
 | Unpinned program words | `test_cashout_evidence.test_unpinned_program_words_are_rejected` |
 | Same outpoint for two quotes | `test_cashout_ledger.test_same_outpoint_for_two_quotes_is_rejected` |
 | Reorg below `min_conf` before authorization: FUNDING_SEEN | `test_cashout_evidence.test_reorg_before_authorization_returns_to_funding_seen` (fixture), `test_cashout_regtest` (regtest, below) |
+| I9: funding re-judged in `submit()` before every rail call; HOLD and crash recovery included | `test_cashout_recheck` (`FixtureRecheckTests` everywhere, `RegtestRecheckTests` with `BAN_REGTEST=1`) |
 | Same quote authorized twice: one `submit` | `test_cashout_ledger.test_same_quote_authorized_twice_submits_once` |
 | Rail timeout: UNKNOWN, resolved by `status()` | `test_cashout_ledger.test_rail_timeout_is_unknown_never_resubmitted_and_resolved_only_by_status` |
 | Rail failure: REFUND_DUE | `test_cashout_ledger.test_rail_failure_is_refund_due` |
@@ -191,8 +204,13 @@ value, and nothing here can reach testnet, signet or mainnet.
     PYTHONPATH=src python -m ban.cli cashout-demo --regtest --bitcoind /path/to/bitcoind
 
 `BAN_REGTEST_ROOT` (or `--regtest-root`) picks the parent folder of the throwaway datadir; the
-default is the system temp folder. Without `BAN_REGTEST=1` the node tests skip, so CI stays
-offline. The guard and the RPC transport have unit tests that always run.
+default is the system temp folder. Without `BAN_REGTEST=1` the node tests skip. The guard and the
+RPC transport have unit tests that always run.
+
+CI runs these tests in two jobs. The `python` job is offline, and there the node tests skip. The
+`regtest` job installs Bitcoin Core 31.1 from bitcoincore.org, checks the tarball against a
+SHA-256 pinned in `.github/workflows/ci.yml`, and runs `tests/test_cashout_re*.py` with
+`BAN_REGTEST=1`. It fails if any test is skipped or if a datadir is left behind.
 
 `RegtestWorld` is a `CashoutWorld` whose funding is a real wallet payment to the quote's deposit
 script. The provider judges it with `CoreRpcEvidence`, from `scantxoutset` and block reads. The
@@ -210,6 +228,15 @@ runs these cases, which the tests also assert:
 | `reorg_orphans_funding_block` | Accept, then `invalidateblock` the funding block | The tx returns to the mempool; `FUNDING_SEEN`; it confirms again in a new block, then accepted and paid once |
 | `rbf_replacement` | Pay, `bumpfee`, mine | Only the replacement is unspent; exactly one `FUNDING_ACCEPTED`, bound to the replacement outpoint; the original outpoint is a `WrongOutput`; one rail call after three pay attempts |
 | `outpoint_for_two_quotes` | Offer quote A's funding outpoint for quote B | Evidence refuses it (`WrongOutput`: wrong script); the ledger refuses it too (`ReplayRejected`, I2) |
+| `hold_resume_after_funding_vanishes` (I9) | Authorize, crash; the commitment moves (recovery: `HOLD`, authorization kept) and comes back; then the funding block is orphaned | Resuming from `HOLD` re-judges first: `FUNDING_SEEN`, 0 rail calls |
+| `recovery_submit_after_funding_vanishes` (I9) | Authorize, crash, orphan the funding block, restart | Recovery `submit()` re-judges before the attempt: `HOLD`, no attempt written, 0 rail calls; next `authorize()`: `FUNDING_SEEN` |
+| `reconfirmed_in_new_block` (I9) | Authorize; orphan the funding block; the tx confirms again in a new block | `submit()`: `HOLD`; `authorize()`: `FUNDING_SEEN`; re-accepted; paid with exactly 1 rail call, under an authorization that binds the new acceptance digest and the same idempotency key |
+| `attempt_begun_is_never_resent` (I9) | Submit, then orphan; separately, crash right after the rail call, then orphan | Retries stay `PAYOUT_SUBMITTED` and the authorization is unchanged; recovery after the crash gives `PAYOUT_UNKNOWN`. 1 rail call each |
+
+The four I9 cases are in `ban.sim.recheck`. They use only `orphan_funding` and
+`reconfirm_funding`, which each world implements on its own chain (a fork in the fixture,
+`invalidateblock` and mining on regtest). `tests/test_cashout_recheck.py` asserts them on the
+fixture chain in every CI run and on the regtest node with `BAN_REGTEST=1`.
 
 The node tests also check that a real Core RPC error is an `EvidenceRejected`, and that a reorg
 between `scantxoutset` and the block reads is a `StaleChain` (the reorg is triggered after each
@@ -224,11 +251,12 @@ Found while running on a real node:
   wrong cookie) still raises, because that is a node problem, not a rejection.
 - **Fixed: loopback RPC honoured proxy variables.** With `HTTP_PROXY` set, `urlopen` would have sent
   the cookie to the proxy. `CoreRpcEvidence` and the harness now use a proxy-free opener.
-- **Fixed: no reorg re-check before authorization.** The ledger had the B.4 edge
-  `FUNDING_ACCEPTED -> FUNDING_SEEN`, but no code used it. `ReferenceProvider.authorize` now
-  re-judges the accepted outpoint first. Any `EvidenceRejected` sends the quote back to
-  `FUNDING_SEEN`. Other node errors propagate, and nothing is paid. A quote in `HOLD` is not
-  re-judged when it is re-authorized, because B.4 has no `HOLD -> FUNDING_SEEN` edge.
+- **Fixed: funding was not re-judged before payout.** The ledger had the B.4 edge
+  `FUNDING_ACCEPTED -> FUNDING_SEEN`, but no code used it. Then a payout could still reach the
+  rail after the funding was gone: from `HOLD` (no re-check, and the stored authorization was
+  reused), and from the crash-recovery `submit()` (it re-checked only the alias). Invariant I9
+  (ledger section) now covers both paths. Any `EvidenceRejected` counts as a rejection. Other node
+  errors propagate, and nothing is paid.
 - **Open: scan mode rejects on the lowest output.** Without a claim, `CoreRpcEvidence` (like
   `FixtureEvidence`) judges only the lowest-height unspent output that pays the script. A stale
   or short output to the script therefore masks a valid later payment until someone submits a

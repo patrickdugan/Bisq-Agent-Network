@@ -16,3 +16,38 @@ jobs:
         env:
           PYTHONPATH: src
         run: python -m unittest discover -s tests -v
+  regtest:
+    # The BAN_REGTEST=1 tests on a private throwaway bitcoind -regtest (spec G.5, I9).
+    runs-on: ubuntu-latest
+    env:
+      CORE_VERSION: '31.1'
+      # bitcoin-31.1-x86_64-linux-gnu.tar.gz, from bitcoincore.org/bin/bitcoin-core-31.1/SHA256SUMS
+      CORE_SHA256: b80d9c3e04da78fb6f0569685673418cf686fadba9042d926d13fb87ff503f9e
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Bitcoin Core (SHA-256 pinned)
+        shell: bash
+        run: |
+          tarball="bitcoin-${CORE_VERSION}-x86_64-linux-gnu.tar.gz"
+          curl -fsSLO "https://bitcoincore.org/bin/bitcoin-core-${CORE_VERSION}/${tarball}"
+          echo "${CORE_SHA256}  ${tarball}" | sha256sum -c -
+          tar -xzf "${tarball}"
+          echo "BAN_BITCOIND=${PWD}/bitcoin-${CORE_VERSION}/bin/bitcoind" >> "$GITHUB_ENV"
+          "${PWD}/bitcoin-${CORE_VERSION}/bin/bitcoind" -version | head -n 1
+      - name: Regtest tests (BAN_REGTEST=1)
+        shell: bash
+        env:
+          PYTHONPATH: src
+          BAN_REGTEST: '1'
+          BAN_REGTEST_ROOT: ${{ runner.temp }}/ban-regtest
+        run: |
+          python -m unittest discover -s tests -p 'test_cashout_re*.py' -v 2>&1 | tee regtest.log
+          if grep -q "skipped" regtest.log; then echo "a regtest test was skipped"; exit 1; fi
+          if [ -n "$(ls -A "${BAN_REGTEST_ROOT}" 2>/dev/null)" ]; then echo "a regtest datadir was left behind"; exit 1; fi
+      - name: Report failures as annotations
+        if: failure()
+        shell: bash
+        run: grep -E '^(FAIL|ERROR):|Error|_NotRefused|refusing' regtest.log | head -n 40 | sed 's/^/::error::/' || true

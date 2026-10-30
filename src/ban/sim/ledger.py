@@ -54,7 +54,8 @@ ALLOWED: dict[State, frozenset[State]] = {
     S.PAYOUT_FAILED: frozenset({S.REFUND_DUE}),
     S.REFUND_DUE: frozenset({S.REFUNDED}),
     S.LATE_FUNDING: frozenset({S.REFUND_DUE, S.REQUOTED}),
-    S.HOLD: frozenset({S.PAYOUT_AUTHORIZED, S.REFUND_DUE}),
+    # Deviation: B.4 has no HOLD -> FUNDING_SEEN; a hold whose funding was reorged out needs one (I9).
+    S.HOLD: frozenset({S.PAYOUT_AUTHORIZED, S.REFUND_DUE, S.FUNDING_SEEN}),
 }
 RELEASES_RESERVATION = frozenset({S.EXPIRED, S.REFUNDED, S.RECONCILED})  # I5
 
@@ -96,7 +97,8 @@ _SCHEMA = (
       created_height INTEGER NOT NULL, expiry_height INTEGER NOT NULL, expiry_unix INTEGER NOT NULL,
       handle TEXT NOT NULL, alias_pubkey TEXT NOT NULL, alias_seq INTEGER NOT NULL,
       commitment TEXT NOT NULL, quote_hex TEXT NOT NULL, quote_sig TEXT NOT NULL,
-      acceptance_digest TEXT, paid_minor INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)""",
+      acceptance_digest TEXT, acceptance_block TEXT,
+      paid_minor INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)""",
     """CREATE TABLE IF NOT EXISTS authorizations(
       quote_id TEXT PRIMARY KEY REFERENCES quotes(quote_id),
       idempotency_key TEXT NOT NULL UNIQUE, auth_hex TEXT NOT NULL, alias_seq INTEGER NOT NULL,
@@ -115,7 +117,7 @@ _SCHEMA = (
 _ROW = ("quote_id,intent_id,state,deposit_script_sha256,outpoint,funding_height,reservation_id,reserved_minor,"
         "reservation_held,net_payout_minor,fee_minor,fee_sats,sats_required,currency,exponent,idempotency_key,"
         "created_height,expiry_height,expiry_unix,handle,alias_pubkey,alias_seq,commitment,quote_hex,quote_sig,"
-        "acceptance_digest")
+        "acceptance_digest,acceptance_block")
 
 
 @dataclass(frozen=True)
@@ -146,6 +148,7 @@ class Row:
     quote_hex: str
     quote_sig: str
     acceptance_digest: str | None
+    acceptance_block: str | None  # the block the current acceptance saw the funding in
 
     @property
     def quote(self) -> ProviderQuoteV1:
@@ -237,13 +240,13 @@ class PayoutLedger:
                 if existing is None:
                     db.execute("INSERT INTO intents VALUES(?,?,?,?,NULL,?)",
                                (quote.intent_id, intent.encode().hex(), intent.rail, S.INTENT_RECEIVED.value, now))
-                db.execute("INSERT INTO quotes(" + _ROW + ",updated_at) VALUES(" + ",".join("?" * 27) + ")", (
+                db.execute("INSERT INTO quotes(" + _ROW + ",updated_at) VALUES(" + ",".join("?" * 28) + ")", (
                     quote_id, quote.intent_id, S.QUOTED.value, quote.deposit_script_sha256, None, None,
                     quote.reservation_id, reserved_minor, 1, quote.net_payout_minor, quote.fee_minor,
                     quote.fee_sats, quote.sats_required, quote.currency, quote.exponent, quote.idempotency_key(),
                     quote.quote_created_height, quote.quote_expiry_height, quote.quote_expiry_unix, handle,
                     intent.alias_pubkey, intent.alias_seq, intent.recipient_commitment, quote.encode().hex(),
-                    sig, None, now))
+                    sig, None, None, now))
                 db.execute("UPDATE intents SET state=?,current_quote_id=? WHERE intent_id=?",
                            (S.QUOTED.value, quote_id, quote.intent_id))
                 db.execute("INSERT INTO transitions(quote_id,from_state,to_state,evidence,at) VALUES(?,?,?,?,?)",
@@ -288,8 +291,11 @@ class PayoutLedger:
             updates += ["outpoint=?", "funding_height=?"]
             params += [evidence["outpoint"], evidence["funding_height"]]
         if to is S.FUNDING_ACCEPTED:
-            updates.append("acceptance_digest=?")
-            params.append(evidence["acceptance_digest"])
+            updates += ["acceptance_digest=?", "acceptance_block=?"]
+            params += [evidence["acceptance_digest"], evidence.get("acceptance_block")]
+            if "funding_height" in evidence:  # a re-acceptance after a reorg can sit at another height
+                updates.append("funding_height=?")
+                params.append(evidence["funding_height"])
         if to is S.PAYOUT_CONFIRMED:
             updates.append("paid_minor=net_payout_minor")
         if to in RELEASES_RESERVATION:
@@ -300,7 +306,12 @@ class PayoutLedger:
 
     def authorize(self, auth: PayoutAuthorizationV1, *, now: int) -> tuple[Row, bool]:
         """Write-ahead authorization. Returns ``(row, created)``; a repeat for the
-        same quote returns the existing authorization and creates nothing (I1)."""
+        same quote returns the existing authorization and creates nothing (I1).
+
+        Authorizing again from FUNDING_ACCEPTED or HOLD (after a reorg and re-acceptance,
+        or a lifted hold) rebinds the unsent authorization to the quote's current
+        acceptance, under the same idempotency key (I9). Once a rail attempt exists the
+        authorization never changes."""
         with immediate(self.database) as db:
             values = db.execute("SELECT " + _ROW + " FROM quotes WHERE quote_id=?", (auth.quote_id,)).fetchone()
             if values is None:
@@ -308,9 +319,9 @@ class PayoutLedger:
             row = _row(values)
             existing = db.execute("SELECT idempotency_key FROM authorizations WHERE quote_id=?",
                                   (auth.quote_id,)).fetchone()
-            if existing is not None and row.state is not S.HOLD:
-                if existing[0] != auth.idempotency_key:
-                    raise InvariantViolation("second authorization with another key (I1)")
+            if existing is not None and existing[0] != auth.idempotency_key:
+                raise InvariantViolation("second authorization with another key (I1)")
+            if existing is not None and row.state not in (S.FUNDING_ACCEPTED, S.HOLD):
                 return row, False
             if row.state not in (S.FUNDING_ACCEPTED, S.HOLD):
                 raise IllegalTransition("cannot authorize from " + row.state.value)
@@ -323,7 +334,14 @@ class PayoutLedger:
             if existing is None:
                 db.execute("INSERT INTO authorizations VALUES(?,?,?,?,?)",
                            (auth.quote_id, auth.idempotency_key, auth.encode().hex(), auth.alias_seq, now))
-            self._transition(db, auth.quote_id, S.PAYOUT_AUTHORIZED, now, {"authorization": auth.digest()})
+            else:
+                if db.execute("SELECT 1 FROM attempts WHERE idempotency_key=?", (auth.idempotency_key,)).fetchone():
+                    raise DuplicatePayout("a rail attempt exists for this key: its authorization is final")
+                db.execute("UPDATE authorizations SET auth_hex=?,alias_seq=?,authorized_at=? WHERE quote_id=?",
+                           (auth.encode().hex(), auth.alias_seq, now, auth.quote_id))
+            self._transition(db, auth.quote_id, S.PAYOUT_AUTHORIZED, now,
+                             {"authorization": auth.digest(), "funding_acceptance": auth.funding_acceptance_digest,
+                              "rebound": existing is not None})
         return self.get(auth.quote_id), existing is None
 
     def begin_attempt(self, quote_id: str, request_digest: str, *, now: int) -> Row:
