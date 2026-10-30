@@ -211,9 +211,25 @@ class ReferenceProvider:
         return self.ledger.transition(row.quote_id, State.FUNDING_SEEN, now=now, outpoint=outpoint,
                                       funding_height=height)
 
+    def _recheck_funding(self, row: Row, now: int) -> Row:
+        """Re-judge the accepted outpoint on the node's current active chain. A reorg
+        below ``min_conf`` before authorization sends the quote back to FUNDING_SEEN
+        (B.3 T5, B.5). Node errors other than a rejection propagate: nothing is paid."""
+        txid, vout = row.outpoint.rsplit(":", 1)
+        try:
+            self.evidence.accept(row.quote, now=now, claim=FundingClaim(txid, int(vout)))
+        except EvidenceRejected as exc:
+            return self.ledger.transition(row.quote_id, State.FUNDING_SEEN, now=now,
+                                          reason="funding no longer accepted: %s: %s" % (type(exc).__name__, exc))
+        return row
+
     # ------------------------------------------------------------ T6/T7
     def authorize(self, quote_id: str, *, now: int) -> State:
         row = self.ledger.get(quote_id)
+        if row.state is State.FUNDING_ACCEPTED:
+            row = self._recheck_funding(row, now)
+            if row.state is State.FUNDING_SEEN:
+                return row.state  # reorged below min_conf: on_funding re-accepts once the chain shows it again
         if row.state not in (State.FUNDING_ACCEPTED, State.HOLD):
             existing = self.ledger.authorization(quote_id)
             if existing is not None:

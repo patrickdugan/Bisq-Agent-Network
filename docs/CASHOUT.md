@@ -38,10 +38,12 @@ It exits non-zero if any attack is not refused or any score line misses its orac
    reserves float and signs `ProviderQuoteV1` with a fresh deposit script. The sender runs
    `intent.check_quote`.
 5. **Funding (T4, T5).** P1 judges the deposit from its own node's view (`evidence.FixtureEvidence`
-   in the demo, or `CoreRpcEvidence` against a loopback regtest node).
-6. **Payout (T6–T9).** P1 re-checks the alias, writes `PayoutAuthorizationV1` before any rail
-   call, writes the single rail attempt, calls the mock rail, issues a signed `PayoutReceiptV1`
-   and reconciles against the rail statement.
+   in the demo, or `CoreRpcEvidence` against a loopback regtest node; see
+   [Regtest evidence](#regtest-evidence-spec-g5)).
+6. **Payout (T6–T9).** P1 re-judges the accepted outpoint on its node's current active chain (a
+   reorg below `min_conf` sends the quote back to `FUNDING_SEEN`), re-checks the alias, writes
+   `PayoutAuthorizationV1` before any rail call, writes the single rail attempt, calls the mock
+   rail, issues a signed `PayoutReceiptV1` and reconciles against the rail statement.
 
 ## Trust boundaries (from spec E, the rows that apply here)
 
@@ -51,7 +53,7 @@ It exits non-zero if any attack is not refused or any score line misses its orac
 | Destination privacy | Commitments in public; enrollment only to P | Gift wrap alone if destinations are published elsewhere (NIP-A3) | Commitments and lint built; enrollment travels in-process (NIP-17/44/59 deferred) |
 | Provider liquidity | Funded float plus a reservation honored, attested by P | `InventoryAttestationV1` (self-asserted), BAN advertised bounds | Reservations built in the simulated ledger; attestations only narrow the shortlist |
 | Freshness | Node tip versus evidence tip (`max_tip_lag`) and record `valid_until` | In-proof `confirmations` | Enforced by `evidence.judge` and the resolver |
-| Active-chain acceptance | The node's active chain at lookup | Proven chainwork alone | Fixture chain only; `CoreRpcEvidence` reads a regtest node |
+| Active-chain acceptance | The node's active chain at lookup | Proven chainwork alone | Fixture chain, and `CoreRpcEvidence` on a private regtest node (reorgs by `invalidateblock`) |
 | Unspentness | The node's view (`scantxoutset`) | Any inclusion proof | `CoreRpcEvidence` only; not needed by P for its own deposit |
 | Proof validity | A pinned verifier binary actually run | A JSON `verified:true`, `proof_verified:true`, a receipt hash | No verifier configured: SP1/Nova evidence is refused; `verified` flags are refused |
 | Actual fiat delivery | Rail-signed status (if Jawwal provides one), recipient acknowledgment, reconciliation | Any Bitcoin proof; P's receipt alone (`provider_attested_only`) | Mock rail only; receipts say `api_status` or `provider_attested_only` |
@@ -154,6 +156,7 @@ Every F.3 item has a test in `tests/test_cashout_*.py`:
 | Candidate keys under production | `test_cashout_evidence.test_candidate_keys_under_production_mode_are_rejected` |
 | Unpinned program words | `test_cashout_evidence.test_unpinned_program_words_are_rejected` |
 | Same outpoint for two quotes | `test_cashout_ledger.test_same_outpoint_for_two_quotes_is_rejected` |
+| Reorg below `min_conf` before authorization: FUNDING_SEEN | `test_cashout_evidence.test_reorg_before_authorization_returns_to_funding_seen` (fixture), `test_cashout_regtest` (regtest, below) |
 | Same quote authorized twice: one `submit` | `test_cashout_ledger.test_same_quote_authorized_twice_submits_once` |
 | Rail timeout: UNKNOWN, resolved by `status()` | `test_cashout_ledger.test_rail_timeout_is_unknown_never_resubmitted_and_resolved_only_by_status` |
 | Rail failure: REFUND_DUE | `test_cashout_ledger.test_rail_failure_is_refund_due` |
@@ -173,6 +176,68 @@ Every F.3 item has a test in `tests/test_cashout_*.py`:
 | Arena: conservation over every exported trace | `test_cashout_arena.test_conservation` (and every export runs `check_conservation`) |
 | Arena: non-USD flagged `arena_supported: false` | `test_cashout_arena.test_non_usd_scenarios_are_flagged_unsupported` |
 | BIP340 vectors, source and SHA-256 | `test_cashout_bip340.test_vendored_csv_matches_recorded_source_hash`, `test_every_vector_verifies_as_expected_and_signs_exactly` |
+
+## Regtest evidence (spec G.5)
+
+The acceptance predicate also runs against a real Bitcoin Core node. `ban.sim.regtest` starts a
+private `bitcoind -regtest` (tested with Bitcoin Core 31.1) in a fresh throwaway datadir, with RPC
+on 127.0.0.1 at a random port, cookie auth, no P2P listening and no outbound connections. Before
+any wallet action, mining or broadcast (any RPC outside a short read-only list), it checks that
+`getblockchaininfo.chain` is `regtest` and that block 0 is the regtest genesis, and refuses
+otherwise. When it finishes it stops the node and deletes the datadir. Regtest coins have no
+value, and nothing here can reach testnet, signet or mainnet.
+
+    BAN_REGTEST=1 BAN_BITCOIND=/path/to/bitcoind PYTHONPATH=src python -m unittest tests.test_cashout_regtest
+    PYTHONPATH=src python -m ban.cli cashout-demo --regtest --bitcoind /path/to/bitcoind
+
+`BAN_REGTEST_ROOT` (or `--regtest-root`) picks the parent folder of the throwaway datadir; the
+default is the system temp folder. Without `BAN_REGTEST=1` the node tests skip, so CI stays
+offline. The guard and the RPC transport have unit tests that always run.
+
+`RegtestWorld` is a `CashoutWorld` whose funding is a real wallet payment to the quote's deposit
+script. The provider judges it with `CoreRpcEvidence`, from `scantxoutset` and block reads. The
+`--regtest` demo runs the B.3 flow (T0a–T9) on the node, exports the honest arena line, and then
+runs these cases, which the tests also assert:
+
+| Case | On the regtest node | Outcome |
+| --- | --- | --- |
+| `accepted_at_min_conf` | Pay the script, mine 1, then 1 more | `FUNDING_SEEN` at 1 conf, `FUNDING_ACCEPTED` at `min_conf` = 2, one rail call |
+| `underpay` | Pay `sats_required - 1` | `WrongOutput`; quote stays `QUOTED`, nothing bound |
+| `overpay` | Pay `sats_required + 25,000` | Accepted at that value; the rail is paid only the quoted net (I6) |
+| `late_funding` | Mine to the expiry height, then fund | Confirms at expiry + 1: `LATE_FUNDING`, authorize refused. A second quote funded in the block at its expiry height is accepted |
+| `replayed_output` | Pre-fund the next quote's script, mine 2, then quote | `ReplayedOutput` (I7); quote stays `QUOTED` |
+| `reorg_below_min_conf` | Accept, then `invalidateblock` the confirming block | Authorize re-judges: `FUNDING_SEEN`, no authorization; after `reconsiderblock`, accepted and paid once |
+| `reorg_orphans_funding_block` | Accept, then `invalidateblock` the funding block | The tx returns to the mempool; `FUNDING_SEEN`; it confirms again in a new block, then accepted and paid once |
+| `rbf_replacement` | Pay, `bumpfee`, mine | Only the replacement is unspent; exactly one `FUNDING_ACCEPTED`, bound to the replacement outpoint; the original outpoint is a `WrongOutput`; one rail call after three pay attempts |
+| `outpoint_for_two_quotes` | Offer quote A's funding outpoint for quote B | Evidence refuses it (`WrongOutput`: wrong script); the ledger refuses it too (`ReplayRejected`, I2) |
+
+The node tests also check that a real Core RPC error is an `EvidenceRejected`, and that a reorg
+between `scantxoutset` and the block reads is a `StaleChain` (the reorg is triggered after each
+read).
+
+Found while running on a real node:
+
+- **Fixed: Core RPC errors escaped as `HTTPError`.** Bitcoin Core answers JSON-RPC 1.0 errors with
+  HTTP 500 and the error object in the body. `CoreRpcEvidence._call` used `urlopen`, which raised
+  `urllib.error.HTTPError`, so the "not in the active-chain block" `StaleChain` branch could never
+  fire. It now reads the body and raises `EvidenceRejected`. A reply with no error body (401 for a
+  wrong cookie) still raises, because that is a node problem, not a rejection.
+- **Fixed: loopback RPC honoured proxy variables.** With `HTTP_PROXY` set, `urlopen` would have sent
+  the cookie to the proxy. `CoreRpcEvidence` and the harness now use a proxy-free opener.
+- **Fixed: no reorg re-check before authorization.** The ledger had the B.4 edge
+  `FUNDING_ACCEPTED -> FUNDING_SEEN`, but no code used it. `ReferenceProvider.authorize` now
+  re-judges the accepted outpoint first. Any `EvidenceRejected` sends the quote back to
+  `FUNDING_SEEN`. Other node errors propagate, and nothing is paid. A quote in `HOLD` is not
+  re-judged when it is re-authorized, because B.4 has no `HOLD -> FUNDING_SEEN` edge.
+- **Open: scan mode rejects on the lowest output.** Without a claim, `CoreRpcEvidence` (like
+  `FixtureEvidence`) judges only the lowest-height unspent output that pays the script. A stale
+  or short output to the script therefore masks a valid later payment until someone submits a
+  claim. B.3 T4 says to accept "one qualifying output".
+- **Open: underpay and overpay policies are recorded in the quote but not enforced.** An underpayment
+  is refused, but no ledger row or `REFUND_DUE` is made. An overpayment is accepted, but the excess
+  is not refunded.
+- **By design: zero-conf is invisible.** `scantxoutset` reads the UTXO set, so the provider does
+  not see a payment before its first confirmation.
 
 ## Departures from the spec
 
@@ -211,9 +276,9 @@ Every F.3 item has a test in `tests/test_cashout_*.py`:
   the same outpoint to a new quote, which I2 forbids, so it needs its own design.
 - **The provider's destination vault** seals destinations with a simulation-only HMAC-SHA256
   keystream under a label-derived key. It is not reviewed encryption.
-- **The demo uses fixture funding only.** Real regtest funding when `BAN_REGTEST_RPC_URL` is set
-  is not wired into the demo. `CoreRpcEvidence` exists, and an env-gated test checks it against a
-  user-run node.
+- **The default demo uses fixture funding.** `cashout-demo --regtest` funds on a private regtest
+  node instead (see [Regtest evidence](#regtest-evidence-spec-g5)). The older env-gated test against
+  a user-run node (`BAN_REGTEST_RPC_URL`) is kept.
 - **Not built:** `RecipientAckV1`, `RefundRecordV1` and `ReconciliationRecordV1` as binary
   contracts (reconciliation is a ledger transition with the statement line as evidence), NIP-44/59
   transport, live relays, real Jawwal calls, the zk-rusto client, BitVM bonds and Cashu.

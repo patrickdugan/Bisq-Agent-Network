@@ -98,6 +98,8 @@ class CashoutWorld:
     """A complete synthetic world: domain, two relays, Alice's record, sender and
     provider resolvers with separate pin stores, a fixture chain and provider P1."""
 
+    chain_label = "fixture chain"
+
     def __init__(self, workdir: str | Path, config: dict | None = None):
         cfg = _merge(DEFAULTS, config or {})
         self.cfg = cfg
@@ -122,7 +124,7 @@ class CashoutWorld:
         self.publish(self.record1)
         self.sender_resolver = AliasResolver(self.nip05, self.relays, PinStore(self.workdir / "sender_pins.sqlite3"))
         self.provider_resolver = AliasResolver(self.nip05, self.relays, PinStore(self.workdir / "p1_pins.sqlite3"))
-        self.chain = FixtureChain(self.network, cfg["tip_height"])
+        self.chain = self.make_chain()
         self.policy = EvidencePolicyV1("test", self.network, {
             "own_core_v1": {"approval": {"state": "approved", "by": "SYNTHETIC_FIXTURE operator", "at": self.now},
                             "chain": self.network, "min_conf": 1}})
@@ -156,6 +158,13 @@ class CashoutWorld:
         return self.sender_resolver.resolve(self.name, now=self.now)
 
     # -- provider side
+    def make_chain(self) -> Any:
+        return FixtureChain(self.network, self.cfg["tip_height"])
+
+    def funding_evidence(self) -> Any:
+        """The provider's own-node view of this world's chain."""
+        return FixtureEvidence(self.chain, self.policy)
+
     def new_provider(self, *, rail: LocalPayoutRail | None = None, crash_points: frozenset[str] = frozenset(),
                      database: str | Path | None = None, evidence: Any = None) -> ReferenceProvider:
         p = self.cfg["provider"]
@@ -163,7 +172,7 @@ class CashoutWorld:
             self.rail_mock = rail
         return ReferenceProvider(
             self.p1, database or self.workdir / "p1.sqlite3", self.rail_mock,
-            evidence or FixtureEvidence(self.chain, self.policy), self.policy,
+            evidence or self.funding_evidence(), self.policy,
             rail_name=self.rail, currency=self.currency, exponent=self.exponent, float_minor=p["float_minor"],
             rate_minor_per_btc=p["rate_minor_per_btc"], fee_bps=p["fee_bps"],
             alias_lookup=lambda handle: self.provider_resolver.resolve(handle, now=self.now).record,

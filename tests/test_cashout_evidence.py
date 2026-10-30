@@ -6,7 +6,7 @@ import unittest
 
 from ban.evidence import (CoreRpcEvidence, EvidenceRejected, FixtureEvidence, FundingClaim, InsufficientConfirmations,
                           PolicyRejected, ReplayedOutput, StaleChain, UntrustedAssertion, VerifierUnavailable,
-                          WrongOutput, admit_third_party, load_fixture_observation)
+                          WrongOutput, admit_third_party, load_fixture_observation, synthetic_block_hash)
 from ban.intent import EvidencePolicyV1
 from ban.sim.ledger import IllegalTransition, State
 from ban.sim.provider import ProviderRefused
@@ -115,6 +115,26 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(self.w.provider.on_funding(self.qid, now=self.w.now, claim=claim), State.FUNDING_SEEN)
         self.w.advance(blocks=1)
         self.assertEqual(self.w.provider.on_funding(self.qid, now=self.w.now, claim=claim), State.FUNDING_ACCEPTED)
+
+    def test_reorg_before_authorization_returns_to_funding_seen(self):
+        claim = self.w.fund(self.quote)
+        self.w.advance(blocks=1)
+        self.assertEqual(self.w.provider.on_funding(self.qid, now=self.w.now), State.FUNDING_ACCEPTED)
+        self.w.chain.tip_height -= 1  # the confirming block is reorged out: 1 confirmation, below min_conf
+        self.assertEqual(self.w.provider.authorize(self.qid, now=self.w.now), State.FUNDING_SEEN)
+        self.w.chain.tip_height += 1
+        self.assertEqual(self.w.provider.on_funding(self.qid, now=self.w.now), State.FUNDING_ACCEPTED)
+        tx = self.w.chain.txs[claim.txid]
+        tx.block_hash = synthetic_block_hash(tx.block_height, "fork")  # the funding block itself leaves the chain
+        self.assertEqual(self.w.provider.pay(self.qid, now=self.w.now), State.FUNDING_SEEN)
+        self.assertIsNone(self.w.provider.ledger.authorization(self.qid))
+        self.assertEqual(self.w.rail_mock.submit_calls, [])
+        tx.block_hash = synthetic_block_hash(tx.block_height)
+        self.assertEqual(self.w.provider.on_funding(self.qid, now=self.w.now), State.FUNDING_ACCEPTED)
+        self.assertEqual(self.w.provider.pay(self.qid, now=self.w.now), State.PAYOUT_SUBMITTED)
+        self.assertEqual(len(self.w.rail_mock.submit_calls), 1)
+        edges = self.w.provider.ledger.history(self.qid)
+        self.assertEqual(edges.count(("FUNDING_ACCEPTED", "FUNDING_SEEN")), 2)
 
     def test_verified_true_without_a_configured_verifier_is_rejected(self):
         policy = EvidencePolicyV1("test", "regtest", {"sp1_btc_payment_v1": dict(PROGRAM, approval=approval("candidate"))})

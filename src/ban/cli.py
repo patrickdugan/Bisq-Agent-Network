@@ -78,8 +78,14 @@ def parser() -> argparse.ArgumentParser:
     sp.add_argument("--port", type=int, default=8088)
     sp = sub.add_parser("cashout-demo", help="simulated cashout flow and refused attacks (synthetic fixture only)")
     sp.add_argument("--fixture", default="fixtures/cashout_demo.json")
-    sp.add_argument("--arena-out", default="out/arena_cashout.jsonl",
-                    help="where to write the P2P-Settlement-Arena score lines")
+    sp.add_argument("--arena-out", default=None,
+                    help="where to write the P2P-Settlement-Arena score lines (default out/arena_cashout.jsonl, "
+                         "or out/arena_cashout_regtest.jsonl with --regtest)")
+    sp.add_argument("--regtest", action="store_true",
+                    help="fund and judge on a private throwaway bitcoind -regtest (started, then deleted)")
+    sp.add_argument("--bitcoind", default=os.getenv("BAN_BITCOIND"), help="bitcoind binary for --regtest")
+    sp.add_argument("--regtest-root", default=os.getenv("BAN_REGTEST_ROOT"),
+                    help="parent directory for the throwaway regtest datadir (default: the system temp dir)")
     return p
 
 
@@ -111,9 +117,13 @@ def run(args: argparse.Namespace) -> dict:
         return purge_expired(args.db)
     if args.command == "cohort":
         return cohort_report(args.db, args.currency)
+    if args.command == "cashout-demo" and args.regtest:
+        from .sim.regtest import run_regtest_demo  # private regtest node only; never reached by other commands
+        return run_regtest_demo(args.fixture, bitcoind=args.bitcoind, root=args.regtest_root,
+                                arena_out=args.arena_out or "out/arena_cashout_regtest.jsonl")
     if args.command == "cashout-demo":
         from .sim.demo import run_demo  # simulation only; never reached by other commands
-        return run_demo(args.fixture, arena_out=args.arena_out)
+        return run_demo(args.fixture, arena_out=args.arena_out or "out/arena_cashout.jsonl")
     adapter = make_adapter(args.source)
     if args.command == "node-check":
         return check_local_node(adapter, args.currency)
@@ -147,7 +157,9 @@ def main() -> None:
         print(json.dumps(result, indent=2, ensure_ascii=False))
     except (AdapterError, InvalidData, CohortError, ValueError) as exc:
         raise SystemExit("Error: " + str(exc)) from None
-    if args.command == "cashout-demo" and not result["all_attacks_refused"]:
+    if args.command == "cashout-demo" and args.regtest and not result["all_cases_held"]:
+        raise SystemExit("Error: a regtest funding case did not hold")
+    if args.command == "cashout-demo" and not args.regtest and not result["all_attacks_refused"]:
         raise SystemExit("Error: an attack was not refused")
     if args.command == "cashout-demo" and not result["arena"]["all_passed"]:
         raise SystemExit("Error: an arena score line did not match its oracle")

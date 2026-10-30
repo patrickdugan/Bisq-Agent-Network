@@ -58,8 +58,9 @@ def _funded(w: CashoutWorld, provider=None, **intent_overrides):
 
 # --------------------------------------------------------------------- flow
 
-def happy_path(fx: dict, root: Path) -> tuple[list[dict], CashoutTrace]:
-    w = _world(fx, root, "flow")
+def happy_path(fx: dict, root: Path, *, make_world: Callable[[dict, Path, str], CashoutWorld] | None = None
+               ) -> tuple[list[dict], CashoutTrace]:
+    w = (make_world or _world)(fx, root, "flow")
     steps: list[dict] = []
     doc = fx["nip05"][w.domain]
     steps.append({"step": "T0a", "transition": "handle registration (domain NIP-05 fixture)",
@@ -99,7 +100,7 @@ def happy_path(fx: dict, root: Path) -> tuple[list[dict], CashoutTrace]:
     qid = quote.quote_id()
     claim = w.fund(quote)
     first = w.provider.on_funding(qid, now=w.now)
-    steps.append({"step": "T4", "transition": "funding tx (fixture chain)", "outpoint": "%s:%d" % (claim.txid, claim.vout),
+    steps.append({"step": "T4", "transition": "funding tx (%s)" % w.chain_label, "outpoint": "%s:%d" % (claim.txid, claim.vout),
                   "height": w.chain.tip_height, "provider_state": first.value})
     w.advance(blocks=w.cfg["provider"]["min_conf"] - 1, seconds=600)
     accepted = w.provider.on_funding(qid, now=w.now)

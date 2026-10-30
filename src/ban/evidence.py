@@ -15,6 +15,7 @@ import ipaddress
 import json
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol
+import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
 
@@ -264,7 +265,8 @@ class CoreRpcEvidence:
     """Optional own-node evidence from a user-run, loopback-only regtest node.
 
     Uses ``scantxoutset`` by deposit script, so no txindex is needed. Off unless
-    ``BAN_REGTEST_RPC_URL`` is set; auth comes from a cookie file path.
+    ``BAN_REGTEST_RPC_URL`` is set or the opt-in ``ban.sim.regtest`` harness starts
+    its own node; auth comes from a cookie file path.
     """
 
     def __init__(self, url: str, policy: EvidencePolicyV1, *, cookie_path: str | None = None, timeout: float = 10.0):
@@ -283,6 +285,7 @@ class CoreRpcEvidence:
         self.policy = policy
         self.cookie_path = cookie_path
         self.timeout = timeout
+        self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # loopback: never via a proxy
 
     def _call(self, method: str, params: list) -> Any:
         body = json.dumps({"jsonrpc": "1.0", "id": "ban", "method": method, "params": params}).encode()
@@ -290,8 +293,18 @@ class CoreRpcEvidence:
         if self.cookie_path:
             token = Path(self.cookie_path).read_text(encoding="ascii").strip()
             request.add_header("Authorization", "Basic " + base64.b64encode(token.encode()).decode())
-        with urllib.request.urlopen(request, timeout=self.timeout) as response:
-            reply = json.loads(response.read(), parse_float=Decimal)
+        try:
+            with self._opener.open(request, timeout=self.timeout) as response:
+                reply = json.loads(response.read(), parse_float=Decimal)
+        except urllib.error.HTTPError as exc:
+            # Core answers JSON-RPC 1.0 errors with HTTP 404/500 and the error object as the body.
+            # A reply without one (401: wrong cookie) is a node problem, not a rejection.
+            try:
+                reply = json.loads(exc.read(), parse_float=Decimal)
+            except ValueError:
+                raise exc from None
+            if not isinstance(reply, dict) or not reply.get("error"):
+                raise exc from None
         if reply.get("error"):
             raise EvidenceRejected("Core RPC error: " + str(reply["error"].get("message")))
         return reply["result"]
