@@ -96,7 +96,7 @@ _SCHEMA = (
       created_height INTEGER NOT NULL, expiry_height INTEGER NOT NULL, expiry_unix INTEGER NOT NULL,
       handle TEXT NOT NULL, alias_pubkey TEXT NOT NULL, alias_seq INTEGER NOT NULL,
       commitment TEXT NOT NULL, quote_hex TEXT NOT NULL, quote_sig TEXT NOT NULL,
-      acceptance_digest TEXT, updated_at INTEGER NOT NULL)""",
+      acceptance_digest TEXT, paid_minor INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)""",
     """CREATE TABLE IF NOT EXISTS authorizations(
       quote_id TEXT PRIMARY KEY REFERENCES quotes(quote_id),
       idempotency_key TEXT NOT NULL UNIQUE, auth_hex TEXT NOT NULL, alias_seq INTEGER NOT NULL,
@@ -186,6 +186,9 @@ class PayoutLedger:
                               [s.value for s in states]).fetchall()
         return [_row(v) for v in rows]
 
+    def all_rows(self) -> list[Row]:
+        return self.in_state(*State)
+
     def current_quote(self, intent_id: str) -> Row | None:
         with reader(self.database) as db:
             found = db.execute("SELECT current_quote_id FROM intents WHERE intent_id=?", (intent_id,)).fetchone()
@@ -194,6 +197,13 @@ class PayoutLedger:
     def held_minor(self) -> int:
         with reader(self.database) as db:
             return db.execute("SELECT COALESCE(SUM(reserved_minor),0) FROM quotes WHERE reservation_held=1").fetchone()[0]
+
+    def committed_minor(self) -> int:
+        """Float that is reserved or already paid out. A reconciled payout releases its
+        reservation, but the money left the float, so it stays committed."""
+        with reader(self.database) as db:
+            return db.execute("SELECT COALESCE(SUM(MAX(CASE WHEN reservation_held=1 THEN reserved_minor ELSE 0 END,"
+                              " paid_minor)),0) FROM quotes").fetchone()[0]
 
     def quote_count(self) -> int:
         with reader(self.database) as db:
@@ -280,6 +290,8 @@ class PayoutLedger:
         if to is S.FUNDING_ACCEPTED:
             updates.append("acceptance_digest=?")
             params.append(evidence["acceptance_digest"])
+        if to is S.PAYOUT_CONFIRMED:
+            updates.append("paid_minor=net_payout_minor")
         if to in RELEASES_RESERVATION:
             updates.append("reservation_held=0")
         db.execute("UPDATE quotes SET " + ",".join(updates) + " WHERE quote_id=?", params + [quote_id])

@@ -78,6 +78,8 @@ def parser() -> argparse.ArgumentParser:
     sp.add_argument("--port", type=int, default=8088)
     sp = sub.add_parser("cashout-demo", help="simulated cashout flow and refused attacks (synthetic fixture only)")
     sp.add_argument("--fixture", default="fixtures/cashout_demo.json")
+    sp.add_argument("--arena-out", default="out/arena_cashout.jsonl",
+                    help="where to write the P2P-Settlement-Arena score lines")
     return p
 
 
@@ -111,7 +113,7 @@ def run(args: argparse.Namespace) -> dict:
         return cohort_report(args.db, args.currency)
     if args.command == "cashout-demo":
         from .sim.demo import run_demo  # simulation only; never reached by other commands
-        return run_demo(args.fixture)
+        return run_demo(args.fixture, arena_out=args.arena_out)
     adapter = make_adapter(args.source)
     if args.command == "node-check":
         return check_local_node(adapter, args.currency)
@@ -147,6 +149,8 @@ def main() -> None:
         raise SystemExit("Error: " + str(exc)) from None
     if args.command == "cashout-demo" and not result["all_attacks_refused"]:
         raise SystemExit("Error: an attack was not refused")
+    if args.command == "cashout-demo" and not result["arena"]["all_passed"]:
+        raise SystemExit("Error: an arena score line did not match its oracle")
 
 
 if __name__ == "__main__":

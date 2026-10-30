@@ -57,6 +57,10 @@
     "expiry_seconds": 7200
   },
   "relay_disagreement_threshold_minor": 100000,
+  "arena": {
+    "amount_sats": 13293,
+    "note": "sats_required of the demo quote (5000 minor net at 38,000,000 minor/BTC, 100 bps); golden scenarios use these amounts"
+  },
   "offerbook": [
     {
       "bisqEasyOffer": {

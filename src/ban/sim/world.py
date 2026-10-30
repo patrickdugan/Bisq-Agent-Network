@@ -133,11 +133,13 @@ class CashoutWorld:
     # -- alias side
     def record(self, key: TestKey, *, seq: int, prev: str | None = None, status: str = "active",
                payout: Sequence[dict] | None = None, rotation_obj: dict | None = None,
-               created_at: int | None = None, valid_seconds: int | None = None, **extra: Any) -> dict:
+               created_at: int | None = None, valid_seconds: int | None = None,
+               recovery_pubkey: str | None = None, **extra: Any) -> dict:
         created = self.now - 60 if created_at is None else created_at
         valid = self.cfg["alias"]["valid_seconds"] if valid_seconds is None else valid_seconds
         return alias_event(key, handle=self.handle, domain=self.domain, seq=seq, created_at=created,
-                           valid_until=created + valid, recovery_pubkey=self.recovery.pubkey,
+                           valid_until=created + valid,
+                           recovery_pubkey=recovery_pubkey or self.recovery.pubkey,
                            payout=[self.target] if payout is None else payout, prev=prev, status=status,
                            rotation=rotation_obj, **extra)
 

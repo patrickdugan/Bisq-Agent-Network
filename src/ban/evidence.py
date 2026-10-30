@@ -297,10 +297,12 @@ class CoreRpcEvidence:
         return reply["result"]
 
     def accept(self, quote: ProviderQuoteV1, *, now: int, claim: FundingClaim | None = None) -> FundingAcceptanceV1:
+        scan = self._call("scantxoutset", ["start", ["raw(" + quote.deposit_script + ")"]])
         info = self._call("getblockchaininfo", [])
         if info.get("chain") != "regtest":
             raise PolicyRejected("node is not on regtest")
-        scan = self._call("scantxoutset", ["start", ["raw(" + quote.deposit_script + ")"]])
+        if scan.get("bestblock") != info.get("bestblockhash"):
+            raise StaleChain("node tip moved during the UTXO scan; retry")
         unspents = sorted(scan.get("unspents", []), key=lambda u: (u["height"], u["txid"], u["vout"]))
         if claim is not None:
             unspents = [u for u in unspents if (u["txid"], u["vout"]) == (claim.txid, claim.vout)]
@@ -310,9 +312,21 @@ class CoreRpcEvidence:
         sats = Decimal(u["amount"]) * SATS_PER_BTC
         if sats != sats.to_integral_value():
             raise WrongOutput("non-integral satoshi amount")
-        tip = int(info["blocks"])
-        block_hash = self._call("getblockhash", [int(u["height"])])
+        tip, height, vout = int(info["blocks"]), int(u["height"]), int(u["vout"])
+        block_hash = self._call("getblockhash", [height])
+        # Prove inclusion in the active-chain block at that height: a reorg between the scan
+        # and these reads would otherwise pair the output with another chain's block.
+        try:
+            tx = self._call("getrawtransaction", [u["txid"], True, block_hash])
+        except EvidenceRejected as exc:
+            raise StaleChain("funding tx is not in the active-chain block at its height") from exc
+        outputs = tx.get("vout", [])
+        if not 0 <= vout < len(outputs) or outputs[vout].get("scriptPubKey", {}).get("hex") != quote.deposit_script \
+                or Decimal(outputs[vout].get("value")) * SATS_PER_BTC != sats:
+            raise StaleChain("block contents disagree with the UTXO scan")
         header = self._call("getblockheader", [block_hash])
-        obs = Observation(u["txid"], int(u["vout"]), int(sats), quote.deposit_script, block_hash, int(u["height"]),
+        if header.get("confirmations") != tip - height + 1 or self._call("getbestblockhash", []) != info["bestblockhash"]:
+            raise StaleChain("node tip moved while reading the funding block; retry")
+        obs = Observation(u["txid"], vout, int(sats), quote.deposit_script, block_hash, height,
                           int(header["time"]), True, tip, info["bestblockhash"], tip)
         return judge(quote, self.policy, obs)

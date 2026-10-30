@@ -155,6 +155,27 @@ class QuoteCheckTests(unittest.TestCase):
         quote2, _ = self.w.provider.quote(other, other_sig, tip_height=self.w.chain.tip_height, now=self.w.now)
         self.assertNotEqual(quote2.deposit_script, self.quote.deposit_script)
 
+    def test_send_exact_gross_must_be_exact_so_no_spread_hides_outside_the_fee_caps(self):
+        send, send_sig = self.w.intent(self.res, amount_mode="send_exact", amount=13_293, min_net_payout_minor=1)
+        quote, sig = self.w.provider.quote(send, send_sig, tip_height=self.w.chain.tip_height, now=self.w.now)
+        self.check(quote=quote, sig=sig, intent=send)
+        hidden = replace(quote, net_payout_minor=4000, fee_minor=0, fee_sats=0)
+        self.assertRejected("disagree", quote=hidden, intent=send)
+
+    def test_alias_record_expiring_after_resolution_fails_the_check(self):
+        short = replace(self.res, record=replace(self.res.record, valid_until=self.w.now + 10))
+        with self.assertRaisesRegex(QuoteRejected, "alias record expired"):
+            check_quote(self.quote, self.sig, self.intent, short, tip_height=self.w.chain.tip_height, now=self.w.now + 11)
+
+    def test_hex_fields_reject_whitespace_so_field_splits_cannot_collide(self):
+        a = replace(sample_intent("regtest"), refund_script_sha256="11" * 31 + "  ", sender_nonce="22" * 32)
+        b = replace(sample_intent("regtest"), refund_script_sha256="11" * 31 + "22", sender_nonce="22" * 31 + "  ")
+        for intent in (a, b):
+            with self.assertRaises(ContractError):
+                intent.encode()
+        with self.assertRaises(ContractError):
+            replace(sample_quote("regtest"), deposit_script="5120 " + "00" * 31 + "0").encode()
+
     def test_amounts_must_match_the_stated_rate(self):
         self.assertRejected("disagree", quote=replace(self.quote, sats_required=self.quote.sats_required + 1))
         self.assertRejected("non-standard", quote=replace(self.quote, deposit_script="76a914" + "00" * 20 + "88ac"))

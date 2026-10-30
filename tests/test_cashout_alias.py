@@ -178,6 +178,32 @@ class AliasTests(unittest.TestCase):
         self.w.now += RECOVERY_WINDOW_SECONDS
         self.assertEqual(self.w.resolve().identity, "recovery_vetoed")
 
+    def test_recovery_cannot_link_below_the_pin_with_a_retired_recovery_key(self):
+        rotated = TestKey("sim/alice-recovery-2")
+        self.w.publish(self.seq2(recovery_pubkey=rotated.pubkey))
+        self.assertEqual(self.w.resolve().record.recovery_pubkey, rotated.pubkey)
+        self.w.withdraw_all()
+        self.w.publish(self.w.record1)  # hide seq 2; seq 1 still names the retired recovery key
+        thief = TestKey("sim/thief")
+        rot = recovery_rotation(self.w.recovery, self.w.alice.pubkey, thief, name=self.w.name, seq=2,
+                                prev_record=self.w.record1["id"])
+        self.w.publish(self.w.record(thief, seq=2, prev=self.w.record1["id"], rotation_obj=rot))
+        self.w.publish(self.w.record(thief, seq=11, prev="ab" * 32))
+        self.rebind(thief.pubkey)
+        self.w.now += RECOVERY_WINDOW_SECONDS + 1
+        res = self.w.resolve()
+        self.assertEqual(res.identity, "new_identity")  # not "recovered": the sender is warned
+        self.assertIn("new_recipient", res.warnings)
+
+    def test_freeze_is_checked_inside_the_pin_transaction(self):
+        pins = PinStore(self.temp.name + "/race.sqlite3")
+        pins.advance(parse_record(self.w.record1, now=self.w.now), self.w.now)
+        pins.freeze(self.w.name, 2)  # another resolver saw two seq-2 records meanwhile
+        with self.assertRaises(Equivocation):
+            pins.advance(parse_record(self.seq2(), now=self.w.now), self.w.now)
+        pins.advance(parse_record(self.w.record(self.w.alice, seq=3, prev="ab" * 32), now=self.w.now), self.w.now)
+        self.assertIsNone(pins.get(self.w.name).frozen_seq)
+
     # -- names
     def test_local_part_is_ascii_and_domain_is_compared_as_a_label(self):
         for bad in ("alicé@pay.test", "аlice@pay.test", "al ice@pay.test", "alice@@pay.test", "alice", "a+b@pay.test"):

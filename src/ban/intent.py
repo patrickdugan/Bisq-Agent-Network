@@ -32,6 +32,8 @@ SATS_PER_BTC = 100_000_000
 _RAIL = re.compile(r"[a-z0-9_]{1,32}")
 _CCY = re.compile(r"[A-Z]{3}")
 _REFERENCE = re.compile(r"[A-Za-z0-9._:-]{0,64}")
+_HEX32 = re.compile(r"[0-9a-f]{64}")
+_HEX = re.compile(r"[0-9a-f]*")
 ZERO32 = "00" * 32
 
 
@@ -44,12 +46,17 @@ class QuoteRejected(ValueError):
 
 
 def _bytes32(value: str) -> bytes:
-    if not isinstance(value, str) or len(value) != 64 or value != value.lower():
+    # A regex, not just bytes.fromhex: fromhex skips whitespace, which would let two
+    # different field splits encode to the same bytes.
+    if not isinstance(value, str) or not _HEX32.fullmatch(value):
         raise ContractError("expected canonical lowercase 32-byte hex")
-    try:
-        return bytes.fromhex(value)
-    except ValueError as exc:
-        raise ContractError("expected canonical lowercase 32-byte hex") from exc
+    return bytes.fromhex(value)
+
+
+def _hexbytes(value: str, limit: int) -> bytes:
+    if not isinstance(value, str) or len(value) % 2 or len(value) > 2 * limit or not _HEX.fullmatch(value):
+        raise ContractError("expected canonical lowercase hex")
+    return bytes.fromhex(value)
 
 
 def _uint(value: int, width: int, *, positive: bool = False) -> bytes:
@@ -284,10 +291,10 @@ class ProviderQuoteV1:
 
     @property
     def deposit_script_sha256(self) -> str:
-        return sha256(bytes.fromhex(self.deposit_script)).hexdigest()
+        return sha256(_hexbytes(self.deposit_script, 64)).hexdigest()
 
     def encode(self) -> bytes:
-        script = bytes.fromhex(self.deposit_script)
+        script = _hexbytes(self.deposit_script, 64)
         if self.quote_expiry_height <= self.quote_created_height:
             raise ContractError("quote must expire after its creation height")
         return b"".join((
@@ -548,6 +555,8 @@ def check_quote(quote: ProviderQuoteV1, sig: str, intent: PayoutIntentV1, resolu
         raise QuoteRejected("intent does not match the resolved alias record")
     if record.status != "active":
         raise QuoteRejected("alias record is not active")
+    if now >= record.valid_until:
+        raise QuoteRejected("alias record expired since it was resolved")
     target = record.target_for(intent.recipient_commitment)
     if target is None or target.rail != intent.rail or target.currency != intent.currency:
         raise QuoteRejected("wrong recipient commitment")
@@ -557,7 +566,7 @@ def check_quote(quote: ProviderQuoteV1, sig: str, intent: PayoutIntentV1, resolu
         raise QuoteRejected("bad quote signature")
     if (quote.currency, quote.exponent) != (intent.currency, intent.exponent):
         raise QuoteRejected("currency or exponent mismatch")
-    script = bytes.fromhex(quote.deposit_script)
+    script = _hexbytes(quote.deposit_script, 64)
     if standard_script_type(script) is None:
         raise QuoteRejected("non-standard deposit script")
     if quote.deposit_script_sha256 in seen_deposit_scripts:
@@ -580,7 +589,8 @@ def check_quote(quote: ProviderQuoteV1, sig: str, intent: PayoutIntentV1, resolu
         if quote.net_payout_minor != intent.amount or quote.sats_required != _sats_for(gross, quote.rate_minor_per_btc):
             raise QuoteRejected("quote amounts disagree with the stated rate")
     else:
-        if quote.sats_required != intent.amount or gross > intent.amount * quote.rate_minor_per_btc // SATS_PER_BTC:
+        # Exact, not an upper bound: an under-stated gross would hide a spread outside the fee caps.
+        if quote.sats_required != intent.amount or gross != intent.amount * quote.rate_minor_per_btc // SATS_PER_BTC:
             raise QuoteRejected("quote amounts disagree with the stated rate")
     if quote.fee_sats != (_sats_for(quote.fee_minor, quote.rate_minor_per_btc) if quote.fee_minor else 0):
         raise QuoteRejected("fee_sats disagrees with the stated rate")

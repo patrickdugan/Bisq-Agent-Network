@@ -61,7 +61,7 @@ A sender pays BTC to a handle such as `alice@pay.test`; a liquidity provider tha
 
     PYTHONPATH=src python -m ban.cli cashout-demo --fixture fixtures/cashout_demo.json
 
-The demo prints every transition, then replays 30 attacks (rollback, equivocation, substituted provider key, wrong output, replayed outpoint, duplicate payout, rail timeout and others) and exits non-zero unless all are refused. Real payouts stay DENY in the policy, and Jawwal Pay capabilities are unverified. See docs/CASHOUT.md.
+The demo prints every transition, then replays 30 attacks (rollback, equivocation, substituted provider key, wrong output, replayed outpoint, duplicate payout, rail timeout and others) and exits non-zero unless all are refused. It also writes P2P-Settlement-Arena score lines to `out/arena_cashout.jsonl` (`src/ban/arena_contract.py`). Real payouts stay DENY in the policy, and Jawwal Pay capabilities are unverified. See docs/CASHOUT.md.
 
 ## Opt-in local merchant cohort
 

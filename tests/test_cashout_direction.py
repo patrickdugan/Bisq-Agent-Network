@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 from ban.adapters import FixtureAdapter
-from ban.cashout_select import cashout_shortlist
+from ban.cashout import cashout_shortlist
 from ban.concierge import shortlist
 from ban.intent import ContractError, price, rate_from_price
 from ban.models import normalize_snapshot

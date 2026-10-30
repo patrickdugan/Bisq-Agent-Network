@@ -15,7 +15,7 @@ from typing import Callable
 from .._db import immediate, reader
 from ..alias import AliasError, AliasRecordV1, payout_commitment
 from ..bip340 import verify_hex
-from ..evidence import FundingClaim, FundingEvidence, InsufficientConfirmations, LateFunding
+from ..evidence import EvidenceRejected, FundingClaim, FundingEvidence, InsufficientConfirmations, LateFunding
 from ..intent import (DestinationEnrollmentV1, EnrollmentAckV1, EvidencePolicyV1, PayoutAuthorizationV1,
                       PayoutIntentV1, PayoutReceiptV1, ProviderQuoteV1, QuoteRejected, ZERO32, price,
                       verify_intent)
@@ -146,7 +146,7 @@ class ReferenceProvider:
                 # Same intent_id, same quote (T2). Once funding is seen the intent never gets a second quote.
                 return existing.quote, existing.quote_sig
         pricing = price(intent.amount_mode, intent.amount, self.rate_minor_per_btc, self.fee_bps)
-        if pricing.net_payout_minor > self.float_minor - self.ledger.held_minor():
+        if pricing.net_payout_minor > self.float_minor - self.ledger.committed_minor():
             raise NoInventory("not enough unreserved float; no quote is issued on unreserved inventory")
         n = self.ledger.quote_count()
         deposit_key = TestKey("%s/deposit/%d" % (self.key.label, n))
@@ -320,8 +320,15 @@ class ReferenceProvider:
         expired = []
         for row in self.ledger.in_state(State.QUOTED):
             if now >= row.expiry_unix or tip_height >= row.expiry_height:
-                self.ledger.transition(row.quote_id, State.EXPIRED, now=now, tip_height=tip_height)
-                expired.append(row.quote_id)
+                # Look for funding first, so the outcome does not depend on whether the sweep
+                # or the funding scan runs first (funding at the expiry height is in time).
+                try:
+                    state = self.on_funding(row.quote_id, now=now)
+                except EvidenceRejected:
+                    state = State.QUOTED
+                if state is State.QUOTED:
+                    self.ledger.transition(row.quote_id, State.EXPIRED, now=now, tip_height=tip_height)
+                    expired.append(row.quote_id)
         return expired
 
     def recover(self, *, now: int) -> dict[str, str]:

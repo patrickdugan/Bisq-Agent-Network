@@ -159,6 +159,21 @@ class LedgerTests(unittest.TestCase):
         self.assertEqual(small.ledger.held_minor(), 0)
         self.w.quote(small)
 
+    def test_paid_out_float_stays_committed_after_reconciliation(self):
+        small = self.w.new_provider(database=self.temp.name + "/float.sqlite3")
+        small.float_minor = 7000
+        self.w.enroll(small)
+        quote, _ = self.funded(small)
+        qid = quote.quote_id()
+        small.pay(qid, now=self.w.now)
+        small.poll(qid, now=self.w.now)
+        small.issue_receipt(qid, now=self.w.now)
+        self.assertEqual(small.reconcile({quote.idempotency_key(): ("delivered", 5000)}, now=self.w.now),
+                         {qid: "RECONCILED"})
+        self.assertEqual((small.ledger.held_minor(), small.ledger.committed_minor()), (0, 5000))
+        with self.assertRaises(NoInventory):
+            self.w.quote(small)
+
     def test_a_funded_intent_never_gets_a_second_quote(self):
         intent, sig = self.w.intent()
         quote, qsig = self.w.provider.quote(intent, sig, tip_height=self.w.chain.tip_height, now=self.w.now)

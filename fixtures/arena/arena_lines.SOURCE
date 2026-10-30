@@ -1,0 +1,11 @@
+P2P-Settlement-Arena result lines used by tests/test_cashout_arena.py.
+Arena pin: https://github.com/patrickdugan/P2P-Settlement-Arena/tree/0f8262723d761b34890c49e04e80e5e2254f5387
+
+Line 1: copied verbatim from README.md:31 (the "seller withholds BTC after fiat payment" sample).
+Lines 2-3: kind "control_state" lines instantiated from the format string at src/control.rs:401-402,
+  with the case/guard/action/status vocabulary of src/control.rs:38-123 and the finding codes of
+  src/control.rs:383-392. Field values (round, buyer_btc_sats, counts) are illustrative, NOT captured
+  from a run: building and running the arena binary was not done for this fixture.
+  Line 2: case "paid", guard "strict", after observe,confirm,send (main task success).
+  Line 3: case "unpaid", guard "legacy" (the deliberately vulnerable trust-claim guard): BTC sent on a
+  forged receipt (side task success).

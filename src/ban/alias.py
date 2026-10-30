@@ -524,7 +524,9 @@ class PinStore:
                     raise Rollback("record seq %d is below pinned seq %d" % (record.seq, seq))
                 if record.seq == seq and record.event_id != record_id:
                     raise Equivocation("two records share seq %d" % seq, seq)
-                frozen = frozen if frozen is not None and record.seq <= frozen else None
+                if frozen is not None and record.seq <= frozen:  # checked inside the write transaction
+                    raise Equivocation("alias frozen at seq %d until a higher seq resolves it" % frozen, frozen)
+                frozen = None
                 db.execute("UPDATE alias_pins SET pubkey=?,seq=?,record_id=?,recovery_pubkey=?,frozen_seq=?,"
                            "updated_at=? WHERE handle=?",
                            (record.pubkey, record.seq, record.event_id, record.recovery_pubkey, frozen,
@@ -614,9 +616,6 @@ class AliasResolver:
         pin = self.pins.get(handle)
         try:
             head, identity = self._select(handle, bound, pin, records, now, warnings)
-            if (pin is not None and pin.frozen_seq is not None and head.seq <= pin.frozen_seq
-                    and identity != "new_identity"):
-                raise Equivocation("alias frozen at seq %d until a higher seq resolves it" % pin.frozen_seq)
             # Quorum counts only relays serving the selected identity, not any record under this d tag.
             relay_heads = tuple(
                 (url, max((r.seq for r in recs if r.pubkey == head.pubkey), default=0)) for url, recs in per_relay)
@@ -677,9 +676,12 @@ class AliasResolver:
             if vetoes:
                 warnings.append("recovery_vetoed_by_previous_key")
                 return _head(own), "recovery_vetoed"
-            if now < started + RECOVERY_WINDOW_SECONDS:
-                raise RecoveryPending("recovery pending until %d" % (started + RECOVERY_WINDOW_SECONDS))
-            return _head([r for r in bound_records if r.seq >= rot.seq]), "recovered"
+            # A recovery may only extend the pin or later: a link below the pin would revive a
+            # recovery key that a newer record already replaced.
+            if base[0] >= pin.seq:
+                if now < started + RECOVERY_WINDOW_SECONDS:
+                    raise RecoveryPending("recovery pending until %d" % (started + RECOVERY_WINDOW_SECONDS))
+                return _head([r for r in bound_records if r.seq >= rot.seq]), "recovered"
         # Domain-only rebind: no old-key or recovery signature links the new key.
         warnings.append("new_recipient")
         return _head(bound_records), "new_identity"

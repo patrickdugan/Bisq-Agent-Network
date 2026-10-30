@@ -9,9 +9,11 @@ from pathlib import Path
 import tempfile
 from typing import Callable
 
+from ..arena_contract import (ARENA_CONTRACT_VERSION, BEHAVIORS, PROFILES, ArenaScenarioV1, CashoutTrace,
+                              QuoteTrace, ledger_trace_to_arena_lines, scenario_for, write_jsonl)
 from ..alias import (AliasError, BindingMismatch, DestinationLeak, Equivocation, Expired, InvalidRecord, Revoked,
                      Rollback, StaleResolution, parse_record)
-from ..cashout_select import cashout_shortlist
+from ..cashout import cashout_shortlist
 from ..evidence import (FixtureEvidence, InsufficientConfirmations, PolicyRejected, ReplayedOutput, StaleChain,
                         UntrustedAssertion, WrongOutput, admit_third_party)
 from ..intent import EvidencePolicyV1, QuoteRejected, check_quote, standard_script_type, verify_receipt
@@ -56,7 +58,7 @@ def _funded(w: CashoutWorld, provider=None, **intent_overrides):
 
 # --------------------------------------------------------------------- flow
 
-def happy_path(fx: dict, root: Path) -> list[dict]:
+def happy_path(fx: dict, root: Path) -> tuple[list[dict], CashoutTrace]:
     w = _world(fx, root, "flow")
     steps: list[dict] = []
     doc = fx["nip05"][w.domain]
@@ -120,7 +122,7 @@ def happy_path(fx: dict, root: Path) -> list[dict]:
     steps.append({"step": "T9", "transition": "reconciliation against the mock rail statement", "result": recon[qid],
                   "reserved_minor_after": w.provider.ledger.held_minor(),
                   "ledger_history": ["%s->%s" % edge for edge in w.provider.ledger.history(qid)]})
-    return steps
+    return steps, world_trace(w, "honest", "settled", ())
 
 
 # ------------------------------------------------------------------ attacks
@@ -405,24 +407,124 @@ ATTACKS: dict[str, Callable[[CashoutWorld, dict], str]] = {
 }
 
 
-def run_attack(fx: dict, root: Path, name: str) -> dict:
+def run_attack(fx: dict, root: Path, name: str) -> tuple[dict, CashoutTrace]:
     if name not in ATTACKS:
         raise ValueError("unknown attack in fixture: " + name)
     w = _world(fx, root, "attack-" + name)
     try:
-        return {"attack": name, "refused": True, "by": ATTACKS[name](w, fx)}
+        result = {"attack": name, "refused": True, "by": ATTACKS[name](w, fx)}
     except (_NotRefused, AliasError) as exc:
-        return {"attack": name, "refused": False, "by": "%s: %s" % (type(exc).__name__, exc)}
+        result = {"attack": name, "refused": False, "by": "%s: %s" % (type(exc).__name__, exc)}
+    settle(w)
+    return result, world_trace(w, name, "blocked", (name + "_blocked",) if result["refused"] else ())
 
 
-def run_demo(fixture: str | Path) -> dict:
+# ---------------------------------------------------------------- arena export
+
+def settle(w: CashoutWorld, *, provider_pays: bool = True) -> None:
+    """Run every scenario to rest: an honest provider pays what it accepted and lets
+    in-flight payouts land; owed refunds are made. A withholding provider pays nothing."""
+    led = w.provider.ledger
+    if provider_pays:
+        for row in led.in_state(State.FUNDING_ACCEPTED):
+            w.provider.pay(row.quote_id, now=w.now)
+        for row in led.in_state(State.PAYOUT_SUBMITTED, State.PAYOUT_UNKNOWN):
+            if isinstance(w.rail_mock, MockJawwalRail) and not w.rail_mock.status_script:
+                w.rail_mock.status_script.append("delivered")
+            w.provider.poll(row.quote_id, now=w.now)
+        for row in led.in_state(State.PAYOUT_CONFIRMED):
+            w.provider.issue_receipt(row.quote_id, now=w.now)
+    for row in led.in_state(State.LATE_FUNDING, State.HOLD):
+        led.transition(row.quote_id, State.REFUND_DUE, now=w.now, reason="refund owed")
+    for row in led.in_state(State.REFUND_DUE):
+        led.transition(row.quote_id, State.REFUNDED, now=w.now, refund_txid="SYNTHETIC-REFUND-" + row.quote_id[:16])
+
+
+def world_trace(w: CashoutWorld, scenario: str, expected: str, refusals: tuple[str, ...], *,
+                claimed: dict[str, int] | None = None) -> CashoutTrace:
+    """Read one world's value movements from three separate sources: the fixture chain
+    (sats S sent), the provider ledger (B.4 history, refunds, receipts) and the mock
+    rail (the only fiat credit to R)."""
+    led = w.provider.ledger
+    quotes = []
+    for row in led.all_rows():
+        script = row.quote.deposit_script
+        sent = sum(value for tx in w.chain.txs.values()
+                   if row.created_height <= tx.block_height <= w.chain.tip_height
+                   and w.chain.block_hash(tx.block_height) == tx.block_hash  # reorged-out outputs never arrived
+                   for value, out in tx.outputs if out == script)
+        history = tuple(led.history(row.quote_id))
+        states = {to for _, to in history}
+        delivered = isinstance(w.rail_mock, MockJawwalRail) and w.rail_mock.payouts.get(row.idempotency_key) == "delivered"
+        claim = (claimed or {}).get(row.quote_id, row.net_payout_minor if "RECEIPTED" in states else 0)
+        quotes.append(QuoteTrace(history, row.net_payout_minor, sent, sent,
+                                 sent if row.state is State.REFUNDED else 0,
+                                 (row.net_payout_minor,) if delivered else (), claim,
+                                 "FUNDING_ACCEPTED" in states))
+    return CashoutTrace(scenario, expected, w.currency, w.exponent, tuple(quotes), refusals)
+
+
+def _provider_withholds(w: CashoutWorld) -> CashoutTrace:
+    quote, _ = _funded(w)
+    w.advance(blocks=144, seconds=86400)  # past any payout deadline; the provider never pays
+    settle(w, provider_pays=False)
+    return world_trace(w, "provider_withholds", "exposure_observed", ())
+
+
+def _sender_withholds(w: CashoutWorld) -> CashoutTrace:
+    _, quote, _ = w.quote()
+    w.advance(blocks=quote.quote_expiry_height - w.chain.tip_height)
+    w.provider.expire(now=w.now, tip_height=w.chain.tip_height)  # nothing was funded; reservation released
+    settle(w)
+    return world_trace(w, "sender_withholds", "blocked", ("unfunded_quote_expired",))
+
+
+def _claim_without_credit(w: CashoutWorld) -> CashoutTrace:
+    provider = w.new_provider(rail=MockJawwalRail(["pending"], []))
+    quote, _ = _funded(w, provider)
+    provider.pay(quote.quote_id(), now=w.now)
+    provider.on_webhook({"reference": quote.idempotency_key(), "status": "delivered"}, now=w.now)  # a claim only
+    _refused(ProviderRefused, lambda: provider.issue_receipt(quote.quote_id(), now=w.now))
+    if provider.ledger.get(quote.quote_id()).state is State.RECEIPTED:
+        raise _NotRefused("a claim produced a receipt")
+    return world_trace(w, "claim_without_credit", "exposure_observed", ("receipt_without_rail_credit",),
+                       claimed={quote.quote_id(): quote.net_payout_minor})
+
+
+EXTRA_ARENA_SCENARIOS: dict[str, Callable[[CashoutWorld], CashoutTrace]] = {
+    "provider_withholds": _provider_withholds,
+    "sender_withholds": _sender_withholds,
+    "claim_without_credit": _claim_without_credit,
+}
+
+
+def golden_scenarios(fx: dict) -> list[ArenaScenarioV1]:
+    """Every behavior under both profiles, at the demo's amounts (fixtures/arena/)."""
+    i, p = fx["intent"], fx["provider"]
+    return [scenario_for(profile, behavior, amount_sats=fx["arena"]["amount_sats"], net_payout_minor=i["amount"],
+                         currency=fx["alias"]["currency"], exponent=fx["alias"]["exponent"],
+                         quote_expiry_height=fx["tip_height"] + p["quote_ttl_blocks"], min_conf=p["min_conf"])
+            for profile in PROFILES for behavior in BEHAVIORS]
+
+
+def run_demo(fixture: str | Path, *, arena_out: str | Path = "out/arena_cashout.jsonl") -> dict:
     fx = json.loads(Path(fixture).read_text(encoding="utf-8"))
     if not isinstance(fx, dict) or fx.get("source") != "SYNTHETIC_FIXTURE":
         raise ValueError("cashout-demo accepts SYNTHETIC_FIXTURE data only")
     with tempfile.TemporaryDirectory(prefix="ban-cashout-demo-") as tmp:
         root = Path(tmp)
-        flow = happy_path(fx, root)
-        attacks = [run_attack(fx, root, name) for name in fx["attacks"]]
+        flow, honest = happy_path(fx, root)
+        traces = [honest]
+        attacks = []
+        for name in fx["attacks"]:
+            result, trace = run_attack(fx, root, name)
+            attacks.append(result)
+            traces.append(trace)
+        for name, build in EXTRA_ARENA_SCENARIOS.items():
+            traces.append(build(_world(fx, root, "arena-" + name)))
+    lines = [line for trace in traces for line in ledger_trace_to_arena_lines(trace)]
+    write_jsonl(lines, arena_out)
+    scored = [json.loads(line) for line in lines]
     refused = sum(1 for a in attacks if a["refused"])
     return {
         "source": "SYNTHETIC_FIXTURE",
@@ -432,6 +534,9 @@ def run_demo(fixture: str | Path) -> dict:
         "attacks_refused": refused,
         "attacks_total": len(attacks),
         "all_attacks_refused": refused == len(attacks),
+        "arena": {"path": str(arena_out), "contract": ARENA_CONTRACT_VERSION, "lines": len(lines),
+                  "all_passed": all(s["passed"] for s in scored),
+                  "attack_success": [s["scenario"] for s in scored if s["attack_success"]]},
         "warning": "Simulation only: synthetic keys and fixture chain, mock rail, no network. Jawwal Pay "
                    "capabilities are unverified; real payouts stay DENY in ban.policy.",
     }

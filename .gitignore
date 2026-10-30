@@ -12,3 +12,4 @@ coverage/
 
 cloud-report/
 cloud/.env
+out/

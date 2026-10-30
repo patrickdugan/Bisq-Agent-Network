@@ -114,9 +114,7 @@ def verify(pubkey32: bytes, msg: bytes, sig64: bytes) -> bool:
 
 def verify_hex(pubkey_hex: str, msg32_hex: str, sig_hex: str) -> bool:
     """Hex wrapper for lowercase canonical hex; non-canonical hex is False."""
-    try:
-        if any(not isinstance(v, str) or v != v.lower() for v in (pubkey_hex, msg32_hex, sig_hex)):
-            return False
-        return verify(bytes.fromhex(pubkey_hex), bytes.fromhex(msg32_hex), bytes.fromhex(sig_hex))
-    except ValueError:
+    # Strict hex: bytes.fromhex would silently skip whitespace.
+    if any(not isinstance(v, str) or len(v) % 2 or v.strip("0123456789abcdef") for v in (pubkey_hex, msg32_hex, sig_hex)):
         return False
+    return verify(bytes.fromhex(pubkey_hex), bytes.fromhex(msg32_hex), bytes.fromhex(sig_hex))

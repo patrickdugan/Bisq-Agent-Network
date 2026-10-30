@@ -1,0 +1,31 @@
+{
+  "source": "SYNTHETIC_FIXTURE",
+  "contract": "ban-arena-cashout/1",
+  "note": "scenario_id = SHA256(ASCII 'BAN-ARENA-SCENARIO-V1', one 0x00 byte, then the TL-Canon v1 bytes of each line in cashout_scenarios.jsonl). Self-generated golden values; a change here is a contract change.",
+  "scenario_ids": {
+    "cashout-btc-first/honest": "6fd30c2e0d5b12769bb27ce8f83c331c31eded07e8d94b6b6d9f29a41534c228",
+    "cashout-btc-first/provider_withholds": "4a843ab571a54fa6d53077091efcb726cbc8e8d60450af4aff9cfcff4a754936",
+    "cashout-btc-first/sender_withholds": "0c64601f694eb7f6464197ffc15056631be6724db395eddad9186a10fc2ad21f",
+    "cashout-btc-first/replay_funding": "4c9004efe1ebc2d3ff151f25faaa4fc2446956006ecf205cc4e8d7e72a3bab52",
+    "cashout-btc-first/wrong_output": "4bd975b29e27f3183083df668e265102100ac3cb842e66ec5dc967ae9db70b40",
+    "cashout-btc-first/stale_chain": "e781a493a51d48f303854d8717178bbd44f7503ff2f02c1478eae7963e3062b8",
+    "cashout-btc-first/duplicate_payout": "8c2555ccea01d8e254300ebfada1662d547d97ac59ece4d70b5b7f3bdeb19ca7",
+    "cashout-btc-first/rail_timeout": "c62a699e636b750ee97592bf4852a408ae905e5ec48f017b82ba631477999bdc",
+    "cashout-btc-first/late_funding": "b209b0f32864c4334b9e8aaf0bfa41503d169a241b126d540ed0bc70c5520ad2",
+    "cashout-btc-first/substituted_provider_key": "9e0a4b9e0cc5a075be012c1bf3c1fb84be15f98b957a3a756dca402353a1bfa2",
+    "cashout-btc-first/alias_equivocation": "a56f475f5f44af554b65c70e14f6d43c71e8125d47df80e5ebf8524a924445f2",
+    "cashout-btc-first/claim_without_credit": "2ff9f43da389a0969679965e6054785974e1fb675a2c4edf887fa1edda5a593e",
+    "cashout-bisq-easy/honest": "a097cb6ef7170718b5fdeb2bd35c80f44456969ad516581ed8c072ebf345599d",
+    "cashout-bisq-easy/provider_withholds": "b2aa2002a338404b3e1a9ae7b77d6d506071f42d7174685f16819cb4cd712528",
+    "cashout-bisq-easy/sender_withholds": "13317aa2d5a22751634d6e8d6e73696f9c1c7bace321ec8a04638404d31fd2df",
+    "cashout-bisq-easy/replay_funding": "994a569e63b5d58624b31665ba6cb56ff2045c08c494a066927b04d5daa4cb62",
+    "cashout-bisq-easy/wrong_output": "12f64a47d098967a53556fa186e55deae956a92ddc4c51838cb1c7979108b8fb",
+    "cashout-bisq-easy/stale_chain": "c7ffd7ba849c9c21d622dad5d9db155843dcb05260ddcc040af9e7776630dca0",
+    "cashout-bisq-easy/duplicate_payout": "c57dc10e1fcf57cc054bcc2d81f692cd58d49ba42d8d66a46f55c498b9bdcd8c",
+    "cashout-bisq-easy/rail_timeout": "29c6ed519b0992fb43bba2010c129b459a69fd73644a15fd6aad4fc9a6dd5c1f",
+    "cashout-bisq-easy/late_funding": "d9a2914b71200af9517ab37c90938a629151d2b919827dd6cb6bd64484b02eaa",
+    "cashout-bisq-easy/substituted_provider_key": "0b280a1cbd4d2dae82dd86a453b0f52b5370a81290804a32810e4adaffeec39d",
+    "cashout-bisq-easy/alias_equivocation": "ceaf3081fc79bd7dd67641fe7f8ac34322e3da011422414477d1ab4b56ac14e8",
+    "cashout-bisq-easy/claim_without_credit": "d66e72a1f40ef0047f5687ca859b4aa09a6bbea48b4f380ede783fc6ba2dfd36"
+  }
+}

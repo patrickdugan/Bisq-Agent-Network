@@ -13,12 +13,13 @@ reference and a query-by-reference, because the ledger needs both. If the real r
 neither, the production gate fails and payouts need manual reconciliation.
 
 Design source: `Spiral/paper/cash_app_global_architecture.md` (sections B.3, B.4, C.4–C.8, D.2,
-E, F). Run the demo:
+D.5, E, F). Run the demo:
 
     PYTHONPATH=src python -m ban.cli cashout-demo --fixture fixtures/cashout_demo.json
 
-It prints each B.3 transition (T0a–T9) against a synthetic world, then replays 30 attacks. It
-exits non-zero if any attack is not refused.
+It prints each B.3 transition (T0a–T9) against a synthetic world, then replays 30 attacks, and
+writes P2P-Settlement-Arena score lines to `out/arena_cashout.jsonl` (`--arena-out` to move it).
+It exits non-zero if any attack is not refused or any score line misses its oracle.
 
 ## Flow
 
@@ -30,7 +31,7 @@ exits non-zero if any attack is not refused.
 2. **Enrollment (T0c).** Alice privately sends P1 a signed `DestinationEnrollmentV1` that opens
    the commitment. P1 stores the destination in its vault keyed by (alias key, commitment) and
    replies with a signed `EnrollmentAckV1`.
-3. **Selection.** `cashout_select.cashout_shortlist` keeps only makers **BUYING** BTC that carry
+3. **Selection.** `cashout.cashout_shortlist` keeps only makers **BUYING** BTC that carry
    a fresh `InventoryAttestationV1` signed by a provider key listed in Alice's record, with enough
    capacity. `concierge.shortlist` is unchanged and still keeps only makers SELLING BTC.
 4. **Intent and quote (T2, T3).** The sender signs `PayoutIntentV1` with an ephemeral key. P1
@@ -82,6 +83,39 @@ are in `fixtures/cashout_golden_vectors.json`. BIP340 verification (`src/ban/bip
 checked against the vendored upstream vectors in `fixtures/bip340_test_vectors.csv` (source and
 SHA-256 in `fixtures/bip340_test_vectors.SOURCE`).
 
+## P2P-Settlement-Arena contract (spec D.5)
+
+`src/ban/arena_contract.py` (contract `ban-arena-cashout/1`) lets the arena
+([P2P-Settlement-Arena](https://github.com/patrickdugan/P2P-Settlement-Arena/tree/0f8262723d761b34890c49e04e80e5e2254f5387)
+@`0f826272`) model the cashout direction and lets BAN report in its vocabulary. It keeps the
+arena's distinction: `passed` means the oracle matched, `attack_success` means a forbidden
+economic outcome happened.
+
+- **`ROLE_MAP`**: provider → `buyer`, sender → `seller`, recipient → `fiat_payee` (new). The module
+  refuses to import if the provider is not the buyer.
+- **Two profiles, not merged.** `cashout-btc-first` (this design: the sender funds first and bears
+  the exposure) and `cashout-bisq-easy` (the provider pays the recipient first; the sender releases
+  BTC on `RecipientAckV1` or rail evidence). The party that moves first bears the second mover's
+  misbehavior; misbehavior by the first mover, the environment or an outside attacker is blocked
+  by the other side's checks. `BEHAVIORS` records the expected oracle for each behavior under
+  each profile.
+- **`ArenaScenarioV1`**: a TL-Canon v1 export with `scenario_id = SHA256("BAN-ARENA-SCENARIO-V1\0" ‖
+  bytes)`. Golden scenarios for all 12 behaviors under both profiles are in
+  `fixtures/arena/cashout_scenarios.jsonl`, with IDs in `cashout_scenario_ids.json`. The arena
+  scores USD only ($6–$600), so every other currency exports `arena_supported: false`; the demo's
+  ILS scenarios are all unsupported until the arena adds currencies.
+- **`parse_arena_line`**: exact key sets and types for the arena's `bisq-easy` and
+  `bisq-musig-model` scenario lines, its `control_state` line, and the two cashout protocols.
+- **`ledger_trace_to_arena_lines`** scores a trace read from three separate sources: the fixture
+  chain (sats the sender sent), the provider ledger (B.4 history, refunds, receipts) and the mock
+  rail (the only credit to the recipient). An unmitigated `provider_withholds` exports
+  `attack_success=true` with `sender_btc_at_risk_sats > 0`: the custodial risk, shown honestly.
+- **`check_conservation`**: sats and fiat minor units are each conserved, and the recipient is
+  credited only by a modeled rail event; a receipt without a rail credit is a violation.
+
+BAN simulates only `cashout-btc-first`. Implementing both profiles in the Rust arena and importing
+`ArenaScenarioV1` there is the arena owner's task (spec G.12); this branch does not touch the arena.
+
 ## Acceptance tests (spec F.3)
 
 Every F.3 item has a test in `tests/test_cashout_*.py`:
@@ -130,12 +164,29 @@ Every F.3 item has a test in `tests/test_cashout_*.py`:
 | Receipt bound to the key, signed by P | `test_cashout_ledger.test_receipt_is_bound_to_the_idempotency_key_and_signed_by_the_provider` |
 | `provider_attested_only` labelling | `test_cashout_ledger.test_provider_attested_only_when_rail_evidence_is_absent` |
 | Policy DENY | `test_cashout_direction.test_cashout_policy_actions_are_denied` |
+| Arena: `ROLE_MAP` provider is the `buyer` | `test_cashout_arena.test_role_map_keeps_the_provider_as_the_btc_buyer` |
+| Arena: golden `scenario_id`, every behavior, both profiles | `test_cashout_arena.test_golden_scenario_ids_for_every_behavior_and_both_profiles` |
+| Arena: `parse_arena_line` accepts real lines, rejects bad fields | `test_cashout_arena.test_parse_accepts_real_arena_lines`, `test_parse_rejects_unknown_missing_and_non_integer_fields` |
+| Arena: every refused attack exports `passed=true, attack_success=false` | `test_cashout_demo.test_cli_demo_exits_zero_and_prints_every_refused_attack` |
+| Arena: unmitigated `provider_withholds` is `attack_success=true`, sats at risk | `test_cashout_arena.test_unmitigated_provider_withholding_is_an_attack_success_with_sender_btc_at_risk`, `test_simulated_provider_withholding_and_claim_without_credit` |
+| Arena: `claim_without_credit` never reaches RECEIPTED | `test_cashout_arena.test_simulated_provider_withholding_and_claim_without_credit` |
+| Arena: conservation over every exported trace | `test_cashout_arena.test_conservation` (and every export runs `check_conservation`) |
+| Arena: non-USD flagged `arena_supported: false` | `test_cashout_arena.test_non_usd_scenarios_are_flagged_unsupported` |
 | BIP340 vectors, source and SHA-256 | `test_cashout_bip340.test_vendored_csv_matches_recorded_source_hash`, `test_every_vector_verifies_as_expected_and_signs_exactly` |
 
 ## Departures from the spec
 
-- **BUY-side selection is `src/ban/cashout_select.py`.** The local `cashout.py` /
-  `arena_contract.py` patch was searched for and not found, so H step 1's fallback applies.
+- **No earlier patch existed.** The `cashout.py` / `arena_contract.py` patch was searched for and
+  confirmed absent on every repo, so both modules are new: `src/ban/cashout.py` (BUY-side
+  selection) and `src/ban/arena_contract.py` (D.5).
+- **Arena oracle `settled`.** D.5 names the oracles `blocked` and `exposure_observed`; the honest
+  scenario needs a third, `settled` (the arena's "Settlement").
+- **`claim_without_credit` is `exposure_observed` in `cashout-btc-first`.** The false claim is
+  refused (no receipt, and the recipient is never credited by it), but the sender's BTC stays held
+  unpaid, which is the same exposure as withholding. In `cashout-bisq-easy` it is `blocked`.
+- **Arena `control_state` fixtures are instantiated from the format string** at
+  `src/control.rs:401-402` with illustrative values; only the README:31 line is a verbatim output.
+  Building and running the arena binary to capture real lines was not done.
 - **Rotation signatures sign a rotation statement, not the new event ID.** The event ID commits to
   the content that carries `prev_sig`, so signing it is circular. The old key (or the recovery
   key) signs `SHA256("CAG-ALIAS-ROTATE-V1\0" | "CAG-ALIAS-RECOVER-V1\0" ‖ name ‖ 0 ‖ new key ‖ seq ‖ prev record)`.
@@ -154,8 +205,9 @@ Every F.3 item has a test in `tests/test_cashout_*.py`:
 - **Signing lives in `ban.sim.testkeys`**, not `tests/`, because the simulated provider signs
   quotes and receipts at runtime in the demo. Modules outside `ban.sim` only verify; a test
   enforces that they never import `ban.sim`.
-- **Ledger edge `EXPIRED -> FUNDING_SEEN -> LATE_FUNDING`** is added for funding that arrives after
-  the expiry sweep. `LATE_FUNDING -> REQUOTED` is a terminal marker only: re-quoting would bind
+- **Ledger edge `EXPIRED -> FUNDING_SEEN -> LATE_FUNDING`** is added for funding first seen after
+  the expiry sweep. The sweep scans for funding before expiring, so funding confirmed at or below
+  `quote_expiry_height` is in time whichever runs first. `LATE_FUNDING -> REQUOTED` is a terminal marker only: re-quoting would bind
   the same outpoint to a new quote, which I2 forbids, so it needs its own design.
 - **The provider's destination vault** seals destinations with a simulation-only HMAC-SHA256
   keystream under a label-derived key. It is not reviewed encryption.

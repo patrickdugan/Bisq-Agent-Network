@@ -8,6 +8,7 @@ import unittest
 from unittest import mock
 
 from ban import cli
+from ban.arena_contract import parse_arena_line
 from ban.sim.demo import ATTACKS, run_demo
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "cashout_demo.json"
@@ -16,10 +17,14 @@ FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "cashout_demo.json"
 class CashoutDemoTests(unittest.TestCase):
     def test_cli_demo_exits_zero_and_prints_every_refused_attack(self):
         out = io.StringIO()
-        with mock.patch.object(sys, "argv", ["ban", "cashout-demo", "--fixture", str(FIXTURE)]), \
-                contextlib.redirect_stdout(out):
-            cli.main()
+        with tempfile.TemporaryDirectory() as temp:
+            arena = Path(temp) / "out" / "arena_cashout.jsonl"
+            with mock.patch.object(sys, "argv", ["ban", "cashout-demo", "--fixture", str(FIXTURE),
+                                                 "--arena-out", str(arena)]), contextlib.redirect_stdout(out):
+                cli.main()
+            lines = arena.read_text(encoding="utf-8").splitlines()
         result = json.loads(out.getvalue())
+        self.check_arena_export(result, lines)
         fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
         self.assertEqual(set(fixture["attacks"]), set(ATTACKS))
         self.assertTrue(result["all_attacks_refused"])
@@ -32,6 +37,21 @@ class CashoutDemoTests(unittest.TestCase):
         self.assertTrue(all(o.startswith("synthetic-ils-buy") for o in select["selected"]))
         self.assertEqual(result["transitions"][-1]["result"], "RECONCILED")
         self.assertNotIn(fixture["alias"]["destination"], out.getvalue())
+
+    def check_arena_export(self, result, lines):
+        scored = {line["scenario"]: line for line in (parse_arena_line(text).fields for text in lines)}
+        self.assertEqual(len(lines), result["arena"]["lines"])
+        self.assertTrue(result["arena"]["all_passed"])
+        for attack in ATTACKS:  # every refused F.3 attack
+            self.assertEqual((scored[attack]["passed"], scored[attack]["attack_success"]), (True, False), attack)
+            self.assertEqual(scored[attack]["protocol"], "cashout-btc-first")
+        withheld = scored["provider_withholds"]
+        self.assertEqual((withheld["passed"], withheld["attack_success"]), (True, True))
+        self.assertGreater(withheld["sender_btc_at_risk_sats"], 0)
+        honest = scored["honest"]
+        self.assertEqual((honest["passed"], honest["attack_success"], honest["recipient_credited_minor"]),
+                         (True, False, 5000))
+        self.assertEqual(sorted(result["arena"]["attack_success"]), ["claim_without_credit", "provider_withholds"])
 
     def test_demo_refuses_non_synthetic_fixtures(self):
         data = json.loads(FIXTURE.read_text(encoding="utf-8"))

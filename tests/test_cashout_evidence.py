@@ -1,9 +1,10 @@
 from dataclasses import replace
+from decimal import Decimal
 import os
 import tempfile
 import unittest
 
-from ban.evidence import (CoreRpcEvidence, FixtureEvidence, FundingClaim, InsufficientConfirmations,
+from ban.evidence import (CoreRpcEvidence, EvidenceRejected, FixtureEvidence, FundingClaim, InsufficientConfirmations,
                           PolicyRejected, ReplayedOutput, StaleChain, UntrustedAssertion, VerifierUnavailable,
                           WrongOutput, admit_third_party, load_fixture_observation)
 from ban.intent import EvidencePolicyV1
@@ -74,12 +75,27 @@ class EvidenceTests(unittest.TestCase):
         self.assertIsNone(self.w.provider.ledger.authorization(self.qid))
         self.assertEqual(self.w.rail_mock.submit_calls, [])
 
-    def test_funding_after_the_expiry_sweep_is_late_even_if_confirmed_in_time(self):
-        self.w.fund(self.quote)
+    def test_funding_seen_after_the_expiry_sweep_is_late(self):
         self.w.advance(seconds=self.quote.quote_expiry_unix - self.w.now)
         self.assertEqual(self.w.provider.expire(now=self.w.now, tip_height=self.w.chain.tip_height), [self.qid])
+        self.assertEqual(self.w.provider.ledger.held_minor(), 0)
+        self.w.fund(self.quote)
         self.w.advance(blocks=2)
         self.assertEqual(self.w.provider.on_funding(self.qid, now=self.w.now), State.LATE_FUNDING)
+
+    def test_funding_at_the_expiry_height_is_in_time_whichever_runs_first(self):
+        for sweep_first in (True, False):
+            with self.subTest(sweep_first=sweep_first):
+                _, quote, _ = self.w.quote()
+                qid = quote.quote_id()
+                self.w.fund(quote, height=quote.quote_expiry_height)
+                self.w.chain.tip_height = quote.quote_expiry_height + 1
+                if sweep_first:
+                    self.assertNotIn(qid, self.w.provider.expire(now=self.w.now, tip_height=self.w.chain.tip_height))
+                else:
+                    self.w.provider.on_funding(qid, now=self.w.now)
+                self.assertEqual(self.w.provider.ledger.get(qid).state, State.FUNDING_ACCEPTED)
+                self.w.chain.tip_height = self.w.cfg["tip_height"]
 
     def test_stale_chain_tip_lag_and_off_active_chain(self):
         claim = self.w.fund(self.quote)
@@ -156,6 +172,35 @@ class EvidenceTests(unittest.TestCase):
                 CoreRpcEvidence(url, self.w.policy)
         CoreRpcEvidence("http://127.0.0.1:18443", self.w.policy)
         CoreRpcEvidence("http://[::1]:18443", self.w.policy)
+
+    def fake_core(self, *, reorg=False, tip_moves=False):
+        quote, sats = self.quote, self.quote.sats_required
+        height, tip = 201, 203
+        block = "aa" * 32
+        replies = {
+            "scantxoutset": {"bestblock": "ff" * 32, "unspents": [{"txid": "cc" * 32, "vout": 0, "height": height,
+                                                                     "amount": Decimal(sats).scaleb(-8)}]},
+            "getblockchaininfo": {"chain": "regtest", "blocks": tip, "bestblockhash": "ee" * 32 if tip_moves else "ff" * 32},
+            "getblockhash": block,
+            "getrawtransaction": {"vout": [{"value": Decimal(sats).scaleb(-8),
+                                            "scriptPubKey": {"hex": quote.deposit_script}}]},
+            "getblockheader": {"confirmations": tip - height + 1, "time": 1},
+            "getbestblockhash": "ff" * 32,
+        }
+
+        class FakeCore(CoreRpcEvidence):
+            def _call(self, method, params):
+                if method == "getrawtransaction" and reorg:
+                    raise EvidenceRejected("Core RPC error: No such transaction found in the provided block")
+                return replies[method]
+        return FakeCore("http://127.0.0.1:18443", self.w.policy)
+
+    def test_core_rpc_evidence_proves_inclusion_and_a_stable_tip(self):
+        self.assertEqual(self.fake_core().accept(self.quote, now=self.w.now).confirmations, 3)
+        with self.assertRaisesRegex(StaleChain, "not in the active-chain block"):
+            self.fake_core(reorg=True).accept(self.quote, now=self.w.now)
+        with self.assertRaisesRegex(StaleChain, "tip moved"):
+            self.fake_core(tip_moves=True).accept(self.quote, now=self.w.now)
 
     @unittest.skipUnless(os.getenv("BAN_REGTEST_RPC_URL"), "set BAN_REGTEST_RPC_URL to a user-run loopback regtest node")
     def test_core_rpc_evidence_against_a_live_regtest_node(self):
