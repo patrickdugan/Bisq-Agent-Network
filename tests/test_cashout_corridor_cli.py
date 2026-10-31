@@ -11,7 +11,7 @@ class CorridorCliSmokeTests(unittest.TestCase):
     def test_25_usd_synthetic_corridor_cli(self):
         root = Path(__file__).resolve().parents[1]
         p = subprocess.run(
-            [sys.executable, "-m", "ban.corridor_preflight", "--fixture",
+            [sys.executable, "-m", "ban.sim.corridor_cli", "--fixture",
              "fixtures/cashout_demo.json", "--usd", "25.00",
              "--synthetic-ils-per-usd", "3.50"],
             cwd=root, env={**os.environ, "PYTHONPATH": "src"}, text=True,
