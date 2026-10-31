@@ -6,6 +6,9 @@
 
     PYTHONPATH=src python -m ban.sim.corridor_cli \
       --fixture fixtures/cashout_demo.json --usd 25.00 --synthetic-ils-per-usd 3.50
+    PYTHONPATH=src python -m ban.sim.corridor_cli \
+      --fixture fixtures/cashout_demo.json --usd 25.00 --synthetic-ils-per-usd 3.50 \
+      --simulate-settlement
     PYTHONPATH=src python -m unittest discover -s tests -v
 
 The demonstration creates a synthetic receive-exact intent for **ILS 87.50**, which corresponds to **$25 at an explicitly fictitious rate of ILS 3.50/USD**. It uses BAN's existing signed BUY-side shortlist with synthetic provider inventory and a synthetic recipient commitment. Output includes candidate synthetic offer IDs, missing gate fields and execution-disabled flags. A SIMULATION_PASS means the *diagnostic fixture* is coherent. There is **no real payment or completed wallet credit** in this command. The pre-existing cashout-demo covers mock rail credit and reconciliation.
@@ -49,3 +52,38 @@ The demonstration creates a synthetic receive-exact intent for **ILS 87.50**, wh
 5. Only after separate human security/compliance review, design a distinct signed authorization gateway; this branch intentionally provides none.
 
 Existing baseline: feat/cashout-regtest-evidence at 3eb4406 (funding recheck I9). Keep it in the PR ancestry; the earlier v0 branch must never be merged alone.
+
+## Synthetic full route and read-only market discovery
+
+With `--simulate-settlement`, the same $25 synthetic example also exercises BAN's
+private destination enrollment, signed sender intent, checked provider quote,
+mock chain funding, I9 active-chain funding recheck, mock wallet credit,
+signed payout receipt, and mock rail-statement reconciliation. The command
+must show `mock_settlement.reconciled_state=RECONCILED`,
+`mock_rail_credit_minor=8750` and exactly one mock rail submission. It never
+contacts JawwalPay or sends Bitcoin. A mock receipt is not an actual credit.
+
+Use a **paired, user-controlled local Bisq 2 node** with read-only API access
+to inspect the orderbook:
+
+    BAN_SOURCE=bisq2 PYTHONPATH=src python -m ban.cli cashout-market --target-ils 87.50
+
+The existing adapter defaults to `http://127.0.0.1:8090/api/v1` and honors
+`BAN_BISQ_API_URL`, `BAN_BISQ_CLIENT_ID`, and `BAN_BISQ_SESSION_ID`. It
+rejects remote endpoints, redirects, and writes. Do not paste these session
+credentials into chat or GitHub. If a node is unavailable, the command exits
+with an adapter error; it cannot silently turn a fixture into live data.
+
+`cashout-market` separates **BTC-buying makers** from BTC-selling makers and
+reports which advertised payment-method strings mention JawwalPay. It checks
+only advertised amount bounds and indicative prices. The *offerbook is not
+executable liquidity*: maker acceptance, sufficient NIS float, an authorized
+recipient wallet payout, and amount/fees must be confirmed independently.
+There are no real third-party wallet transfers in this branch. In particular,
+Bisq 1's matching-account rules and Bisq Easy's fiat-first flow should not
+be conflated with this product's experimental BTC-first provider model.
+
+A compliant integration would need a separately contracted provider for the
+recipient payout and a binding between its payout receipt and the sender's
+quote. Until that exists, a display of "JawwalPay" in a Bisq offer is only
+untrusted maker text.
