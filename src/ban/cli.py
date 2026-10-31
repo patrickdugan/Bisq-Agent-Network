@@ -26,6 +26,8 @@ def parser() -> argparse.ArgumentParser:
     sp.add_argument("--currency", default="PHP")
     sp.add_argument("--amount", required=True)
     sp.add_argument("--payment-method", default="")
+    sp = sub.add_parser("cashout-market", help="read-only BTC/ILS BUY bids and JawwalPay text mentions")
+    sp.add_argument("--target-ils", default="87.50", help="recipient amount in ILS, two decimals")
     sp = sub.add_parser("merchant-quote")
     sp.add_argument("--currency", default="PHP")
     sp.add_argument("--margin-bps", required=True)
@@ -125,6 +127,14 @@ def run(args: argparse.Namespace) -> dict:
         from .sim.demo import run_demo  # simulation only; never reached by other commands
         return run_demo(args.fixture, arena_out=args.arena_out or "out/arena_cashout.jsonl")
     adapter = make_adapter(args.source)
+    if args.command == "cashout-market":
+        from .cashout_market import inspect_ils_buy_orders
+        snapshot = adapter.offers("ILS")
+        try:
+            reference = adapter.reference_price("ILS")
+        except AdapterError:
+            reference = None
+        return inspect_ils_buy_orders(snapshot, args.target_ils, reference)
     if args.command == "node-check":
         return check_local_node(adapter, args.currency)
     if args.command == "merchant-quote":
