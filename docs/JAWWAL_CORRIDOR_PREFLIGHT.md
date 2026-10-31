@@ -4,7 +4,7 @@
 
 ## Usage
 
-    PYTHONPATH=src python -m ban.corridor_preflight \
+    PYTHONPATH=src python -m ban.sim.corridor_cli \
       --fixture fixtures/cashout_demo.json --usd 25.00 --synthetic-ils-per-usd 3.50
     PYTHONPATH=src python -m unittest discover -s tests -v
 
