@@ -1,8 +1,22 @@
+diff --git a/api/src/main/java/bisq/api/rest_api/endpoints/config/ApiFeature.java b/api/src/main/java/bisq/api/rest_api/endpoints/config/ApiFeature.java
+index 931c6612..dc037824 100644
+--- a/api/src/main/java/bisq/api/rest_api/endpoints/config/ApiFeature.java
++++ b/api/src/main/java/bisq/api/rest_api/endpoints/config/ApiFeature.java
+@@ -42,7 +42,8 @@ public enum ApiFeature {
+     PRIVATE_CHAT("private-chat"),
+     CONTACTS("contacts"),
+     PUBLIC_CHAT("public-chat"),
+-    CLIENT_MANAGEMENT("client-management");
++    CLIENT_MANAGEMENT("client-management"),
++    TRADE_STATUS("trade-status");
+ 
+     private final String key;
+ 
 diff --git a/api/src/main/java/bisq/api/rest_api/endpoints/trades/TradeRestApi.java b/api/src/main/java/bisq/api/rest_api/endpoints/trades/TradeRestApi.java
+index 2edd928b..65e39504 100644
 --- a/api/src/main/java/bisq/api/rest_api/endpoints/trades/TradeRestApi.java
 +++ b/api/src/main/java/bisq/api/rest_api/endpoints/trades/TradeRestApi.java
-@@ -125,9 +125,38 @@
-         bisqEasyTradeService = tradeService.getBisqEasyTradeService();
+@@ -126,6 +126,35 @@ public class TradeRestApi extends RestApiBase {
          this.closedTradeItemsService = closedTradeItemsService;
      }
  
@@ -38,21 +52,29 @@ diff --git a/api/src/main/java/bisq/api/rest_api/endpoints/trades/TradeRestApi.j
      @GET
      @Path("/closed")
      @Operation(
-             summary = "Get closed trades",
-             description = "Returns closed trades (completed, cancelled, rejected, or failed) for the current user. " +
 diff --git a/api/src/main/java/bisq/api/rest_api/endpoints/trades/TradeStatusDto.java b/api/src/main/java/bisq/api/rest_api/endpoints/trades/TradeStatusDto.java
 new file mode 100644
+index 00000000..b7445fea
 --- /dev/null
 +++ b/api/src/main/java/bisq/api/rest_api/endpoints/trades/TradeStatusDto.java
-@@ -0,0 +1,21 @@
+@@ -0,0 +1,30 @@
 +/*
 + * This file is part of Bisq.
 + *
 + * Bisq is free software: you can redistribute it and/or modify it
 + * under the terms of the GNU Affero General Public License as published by
-+ * the Free Software Foundation, either version 3 of the License, or
-+ * (at your option) any later version.
++ * the Free Software Foundation, either version 3 of the License, or (at
++ * your option) any later version.
++ *
++ * Bisq is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public
++ * License for more details.
++ *
++ * You should have received a copy of the GNU Affero General Public License
++ * along with Bisq. If not, see <http://www.gnu.org/licenses/>.
 + */
++
 +package bisq.api.rest_api.endpoints.trades;
 +
 +import bisq.api.dto.trade.bisq_easy.protocol.BisqEasyTradeStateDto;
@@ -64,21 +86,31 @@ new file mode 100644
 +public record TradeStatusDto(String tradeId,
 +                             String offerId,
 +                             BisqEasyTradeStateDto tradeState,
-+                             String lifecycle) {
++                             TradeStore store) {
 +}
 diff --git a/api/src/main/java/bisq/api/rest_api/endpoints/trades/TradeStatusQuery.java b/api/src/main/java/bisq/api/rest_api/endpoints/trades/TradeStatusQuery.java
 new file mode 100644
+index 00000000..28270669
 --- /dev/null
 +++ b/api/src/main/java/bisq/api/rest_api/endpoints/trades/TradeStatusQuery.java
-@@ -0,0 +1,59 @@
+@@ -0,0 +1,68 @@
 +/*
 + * This file is part of Bisq.
 + *
 + * Bisq is free software: you can redistribute it and/or modify it
 + * under the terms of the GNU Affero General Public License as published by
-+ * the Free Software Foundation, either version 3 of the License, or
-+ * (at your option) any later version.
++ * the Free Software Foundation, either version 3 of the License, or (at
++ * your option) any later version.
++ *
++ * Bisq is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public
++ * License for more details.
++ *
++ * You should have received a copy of the GNU Affero General Public License
++ * along with Bisq. If not, see <http://www.gnu.org/licenses/>.
 + */
++
 +package bisq.api.rest_api.endpoints.trades;
 +
 +import bisq.api.dto.DtoMappings;
@@ -108,14 +140,14 @@ new file mode 100644
 +        }
 +        Map<String, TradeStatusDto> byId = new HashMap<>();
 +        openTrades.filter(trade -> offerId.equals(trade.getOffer().getId()))
-+                .map(trade -> toDto(trade, "OPEN"))
++                .map(trade -> toDto(trade, TradeStore.OPEN))
 +                .forEach(dto -> byId.put(dto.tradeId(), dto));
 +
 +        // Moving a trade to the closed store may temporarily leave it in
 +        // both stores. Prefer CLOSED for the same ID during that interval.
 +        closedTrades.map(BisqEasyClosedTrade::trade)
 +                .filter(trade -> offerId.equals(trade.getOffer().getId()))
-+                .map(trade -> toDto(trade, "CLOSED"))
++                .map(trade -> toDto(trade, TradeStore.CLOSED))
 +                .forEach(dto -> byId.put(dto.tradeId(), dto));
 +
 +        return byId.values().stream()
@@ -123,26 +155,94 @@ new file mode 100644
 +                .toList();
 +    }
 +
-+    private static TradeStatusDto toDto(BisqEasyTrade trade, String lifecycle) {
++    private static TradeStatusDto toDto(BisqEasyTrade trade, TradeStore store) {
 +        return new TradeStatusDto(trade.getId(),
 +                trade.getOffer().getId(),
 +                DtoMappings.BisqEasyTradeStateMapping.fromBisq2Model(trade.getTradeState()),
-+                lifecycle);
++                store);
 +    }
 +}
-diff --git a/api/src/test/java/bisq/api/rest_api/endpoints/trades/TradeStatusQueryTest.java b/api/src/test/java/bisq/api/rest_api/endpoints/trades/TradeStatusQueryTest.java
+diff --git a/api/src/main/java/bisq/api/rest_api/endpoints/trades/TradeStore.java b/api/src/main/java/bisq/api/rest_api/endpoints/trades/TradeStore.java
 new file mode 100644
+index 00000000..1d77fdf2
 --- /dev/null
-+++ b/api/src/test/java/bisq/api/rest_api/endpoints/trades/TradeStatusQueryTest.java
-@@ -0,0 +1,74 @@
++++ b/api/src/main/java/bisq/api/rest_api/endpoints/trades/TradeStore.java
+@@ -0,0 +1,27 @@
 +/*
 + * This file is part of Bisq.
 + *
 + * Bisq is free software: you can redistribute it and/or modify it
 + * under the terms of the GNU Affero General Public License as published by
-+ * the Free Software Foundation, either version 3 of the License, or
-+ * (at your option) any later version.
++ * the Free Software Foundation, either version 3 of the License, or (at
++ * your option) any later version.
++ *
++ * Bisq is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public
++ * License for more details.
++ *
++ * You should have received a copy of the GNU Affero General Public License
++ * along with Bisq. If not, see <http://www.gnu.org/licenses/>.
 + */
++
++package bisq.api.rest_api.endpoints.trades;
++
++/**
++ * The local trade store a trade status was read from. Distinct from a trade's
++ * {@code lifecycleState} (ACTIVE, HISTORICAL, FAILED).
++ */
++public enum TradeStore {
++    OPEN,
++    CLOSED
++}
+diff --git a/api/src/test/java/bisq/api/rest_api/endpoints/config/ConfigRestApiTest.java b/api/src/test/java/bisq/api/rest_api/endpoints/config/ConfigRestApiTest.java
+index 9d74b1f3..af9c0ae5 100644
+--- a/api/src/test/java/bisq/api/rest_api/endpoints/config/ConfigRestApiTest.java
++++ b/api/src/test/java/bisq/api/rest_api/endpoints/config/ConfigRestApiTest.java
+@@ -108,6 +108,7 @@ class ConfigRestApiTest {
+         assertThat(ApiFeature.CONTACTS.getKey()).isEqualTo("contacts");
+         assertThat(ApiFeature.PUBLIC_CHAT.getKey()).isEqualTo("public-chat");
+         assertThat(ApiFeature.CLIENT_MANAGEMENT.getKey()).isEqualTo("client-management");
++        assertThat(ApiFeature.TRADE_STATUS.getKey()).isEqualTo("trade-status");
+     }
+ 
+     /**
+@@ -124,6 +125,12 @@ class ConfigRestApiTest {
+     void everyDeclaredFeatureIsBackedByARealImplementation() {
+         for (ApiFeature feature : ApiFeature.values()) {
+             boolean checked = switch (feature) {
++                case TRADE_STATUS -> {
++                    assertThat(hasEndpoint(TradeRestApi.class, "/trades", "/status"))
++                            .as("trade-status must expose GET /trades/status")
++                            .isTrue();
++                    yield true;
++                }
+                 case CLOSED_TRADES -> {
+                     assertThat(hasEndpoint(TradeRestApi.class, "/trades", "/closed"))
+                             .as("closed-trades must expose GET /trades/closed")
+diff --git a/api/src/test/java/bisq/api/rest_api/endpoints/trades/TradeStatusQueryTest.java b/api/src/test/java/bisq/api/rest_api/endpoints/trades/TradeStatusQueryTest.java
+new file mode 100644
+index 00000000..fb5ba891
+--- /dev/null
++++ b/api/src/test/java/bisq/api/rest_api/endpoints/trades/TradeStatusQueryTest.java
+@@ -0,0 +1,83 @@
++/*
++ * This file is part of Bisq.
++ *
++ * Bisq is free software: you can redistribute it and/or modify it
++ * under the terms of the GNU Affero General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or (at
++ * your option) any later version.
++ *
++ * Bisq is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public
++ * License for more details.
++ *
++ * You should have received a copy of the GNU Affero General Public License
++ * along with Bisq. If not, see <http://www.gnu.org/licenses/>.
++ */
++
 +package bisq.api.rest_api.endpoints.trades;
 +
 +import bisq.offer.bisq_easy.BisqEasyOffer;
@@ -181,7 +281,7 @@ new file mode 100644
 +        assertThat(matches).hasSize(1);
 +        assertThat(matches.getFirst().tradeId()).isEqualTo("trade-a");
 +        assertThat(matches.getFirst().offerId()).isEqualTo("offer-1");
-+        assertThat(matches.getFirst().lifecycle()).isEqualTo("OPEN");
++        assertThat(matches.getFirst().store()).isEqualTo(TradeStore.OPEN);
 +        assertThat(matches.getFirst().tradeState().name()).isEqualTo("INIT");
 +    }
 +
@@ -192,7 +292,7 @@ new file mode 100644
 +        List<TradeStatusDto> matches = TradeStatusQuery.byOffer(
 +                Stream.of(trade), Stream.of(closed), "offer-1");
 +        assertThat(matches).hasSize(1);
-+        assertThat(matches.getFirst().lifecycle()).isEqualTo("CLOSED");
++        assertThat(matches.getFirst().store()).isEqualTo(TradeStore.CLOSED);
 +    }
 +
 +    @Test
@@ -211,44 +311,52 @@ new file mode 100644
 +}
 diff --git a/docs/specifications/api/trade-status.md b/docs/specifications/api/trade-status.md
 new file mode 100644
+index 00000000..52d28831
 --- /dev/null
 +++ b/docs/specifications/api/trade-status.md
-@@ -0,0 +1,38 @@
-+# Read-only trade status observation (experimental)
+@@ -0,0 +1,45 @@
++# Trade status API (experimental)
 +
-+This proposal adds a minimal GET endpoint for clients that lost a response
-+or a WebSocket connection: `GET /api/v1/trades/status?offerId=<id>`.
++`GET /api/v1/trades/status?offerId=<id>` returns the status of this node's Bisq Easy trades for
++one offer. A client that lost a response or a WebSocket connection uses it to observe whether a
++trade for that offer exists locally and in which state.
 +
-+The response is a list containing `tradeId`, `offerId`, `tradeState`
-+and `lifecycle` (OPEN/CLOSED), with no payment details or key material.
-+Results are sorted by trade ID. A currently closed trade can temporarily
-+appear in both stores, so the closed record wins for duplicate trade IDs.
++## Response
 +
-+It requires the existing TRADES permission and the existing API session.
-+**That permission currently also authorizes state-mutating trade routes.**
-+This patch does not implement fine-grained read-only grants or change pairing.
++The response is a list of entries, each with `tradeId`, `offerId`, `tradeState` and `store`.
++`store` is `OPEN` or `CLOSED` and names the local trade store the entry was read from. It is not
++the trade's `lifecycleState` (ACTIVE, HISTORICAL, FAILED).
++
++Entries contain no payment details, profile keys or chat content, so that a client which only
++needs to reconcile state does not receive private trade data.
++
++Entries are sorted by trade ID. A trade being moved to the closed store can appear in both stores
++for a short time. For a duplicate trade ID the closed entry wins, because a trade only moves from
++open to closed.
++
++A missing or malformed `offerId` returns 400.
++
++## Access
++
++The endpoint uses the same access control as the other REST routes. With the security setting
++`supportSessionHandling` enabled it requires an authenticated API session, and with
++`authorizationRequired` enabled it requires the TRADES permission. Both are enabled in the API app
++and desktop configurations. A node with both disabled serves the endpoint without either check.
++
++The TRADES permission also authorizes the state-changing trade routes; this endpoint does not add a
++narrower read-only grant.
++
++Nodes that support the endpoint list the `trade-status` key in their API capabilities, so a client
++can detect support without probing for a 404.
 +
 +## Recovery semantics
 +
-+- This endpoint never creates, accepts, closes or replays a trade.
-+- Open and closed trade stores can change during iteration; the result is
-+  observational, not a linearizable or durable commit point.
-+- An empty list does **not** prove that a prior take-offer request failed.
-+  It must not be used to authorize a blind retry after a timeout.
-+- Multiple trades can share an offer ID; this endpoint does not establish
-+  which request, if any, created a listed trade.
-+- This feature does not repair the acknowledged-before-durable-apply issue
-+  tracked in bisq2#5126.
-+- A production agent would still need a separately reviewed per-request
-+  idempotency contract and narrowly scoped credentials.
-+
-+## Companion adapter
-+
-+A read-only client and an observation-only recovery journal are implemented
-+in patrickdugan/Bisq-Agent-Network on branch
-+`experiment/bisq2-trade-state-reconciliation`.
-+
-+## Verification
-+
-+Run Bisq 2's API tests and check permission behavior and API compatibility
-+on a fork before submitting this feature for upstream review.
++- The endpoint never creates, accepts, closes or replays a trade.
++- The open and closed trade stores can change while they are read. The result is an observation,
++  not an atomic snapshot or a durable commit point.
++- An empty list does not prove that an earlier take-offer request failed, and must not be used to
++  authorize retrying it after a timeout: the request can be acknowledged before it is durably
++  applied (bisq2#5126).
++- Several trades can share an offer ID. The endpoint does not establish which request, if any,
++  created a listed trade.
++- Safe retries need a per-request idempotency contract, which this endpoint does not provide.

@@ -23,16 +23,20 @@ def validate_id(value: str) -> str:
     return value
 
 
+# Name of the OPEN/CLOSED field: "store" since bisq2 36e6bc80, "lifecycle" before.
+_STORE_KEYS = ("store", "lifecycle")
+
+
 @dataclass(frozen=True)
 class TradeObservation:
     trade_id: str
     offer_id: str
     state: str
-    lifecycle: str
+    store: str
 
     def as_dict(self) -> dict[str, str]:
         return {"tradeId": self.trade_id, "offerId": self.offer_id,
-                "tradeState": self.state, "lifecycle": self.lifecycle}
+                "tradeState": self.state, "store": self.store}
 
 
 def parse_statuses(payload: Any, offer_id: str) -> tuple[TradeObservation, ...]:
@@ -46,9 +50,10 @@ def parse_statuses(payload: Any, offer_id: str) -> tuple[TradeObservation, ...]:
         raise ObservationError("expected at most 1000 status records")
     seen: set[str] = set()
     result: list[TradeObservation] = []
-    required = {"tradeId", "offerId", "tradeState", "lifecycle"}
+    base = {"tradeId", "offerId", "tradeState"}
     for item in payload:
-        if not isinstance(item, dict) or set(item) != required:
+        if not isinstance(item, dict) or not any(
+                set(item) == base | {key} for key in _STORE_KEYS):
             raise ObservationError("unexpected trade status schema")
         trade_id = validate_id(item["tradeId"])
         row_offer_id = validate_id(item["offerId"])
@@ -57,13 +62,13 @@ def parse_statuses(payload: Any, offer_id: str) -> tuple[TradeObservation, ...]:
         state = item["tradeState"]
         if not isinstance(state, str) or not _STATE.fullmatch(state):
             raise ObservationError("invalid trade state")
-        lifecycle = item["lifecycle"]
-        if lifecycle not in ("OPEN", "CLOSED"):
-            raise ObservationError("invalid trade lifecycle")
+        store = item["store"] if "store" in item else item["lifecycle"]
+        if store not in ("OPEN", "CLOSED"):
+            raise ObservationError("invalid trade store")
         if trade_id in seen:
             raise ObservationError("duplicate trade id")
         seen.add(trade_id)
-        result.append(TradeObservation(trade_id, row_offer_id, state, lifecycle))
+        result.append(TradeObservation(trade_id, row_offer_id, state, store))
     return tuple(sorted(result, key=lambda obs: obs.trade_id))
 
 

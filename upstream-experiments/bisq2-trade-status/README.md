@@ -24,8 +24,12 @@ The response contains an array of these four values only:
 
 ```json
 [{"tradeId":"trade-1","offerId":"offer-1",
-  "tradeState":"INIT","lifecycle":"OPEN"}]
+  "tradeState":"INIT","store":"OPEN"}]
 ```
+
+`store` names the local trade store (`OPEN` or `CLOSED`). Fork builds
+before 36e6bc80 called this field `lifecycle`; the BAN client accepts
+either name, but never both in one record.
 
 The query includes open and closed trade stores, deduplicates by trade ID
 with CLOSED taking precedence, and orders by trade ID. It returns no raw

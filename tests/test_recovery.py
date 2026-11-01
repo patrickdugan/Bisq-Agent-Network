@@ -21,8 +21,14 @@ def statuses(*rows):
     return parse_statuses(list(rows), OFFER)
 
 
-def item(trade="trade-1", offer=OFFER, lifecycle="OPEN", state="INIT"):
-    return {"tradeId": trade, "offerId": offer, "tradeState": state, "lifecycle": lifecycle}
+def item(trade="trade-1", offer=OFFER, store="OPEN", state="INIT"):
+    return {"tradeId": trade, "offerId": offer, "tradeState": state, "store": store}
+
+
+def legacy_item(trade="trade-1", store="OPEN"):
+    row = item(trade, store=store)
+    row["lifecycle"] = row.pop("store")
+    return row
 
 
 class StatusContractTests(unittest.TestCase):
@@ -32,12 +38,19 @@ class StatusContractTests(unittest.TestCase):
         self.assertEqual(recovery_outcome(statuses(item())), "OBSERVED")
         self.assertEqual([x.trade_id for x in statuses(item("b"), item("a"))], ["a", "b"])
 
+    def test_store_field_and_legacy_lifecycle_field(self):
+        self.assertEqual(statuses(item(store="CLOSED"))[0].store, "CLOSED")
+        self.assertEqual(statuses(legacy_item(store="CLOSED"))[0].store, "CLOSED")
+        self.assertEqual(statuses(item())[0].as_dict()["store"], "OPEN")
+
     def test_reject_sensitive_or_mismatched_fields(self):
         for payload in (
             [dict(item(), privateKey="SECRET")],
             [item(offer="other")],
             [item(state="any unknown")],
-            [item(lifecycle="AWAITING")],
+            [item(store="AWAITING")],
+            [legacy_item(store="AWAITING")],
+            [dict(item(), lifecycle="OPEN")],
             [item(), item()],
             {"tradeId": "trade-1"},
             [item(trade="hello\nworld")],
@@ -133,10 +146,12 @@ class ObserverHttpTests(unittest.TestCase):
         return Bisq2LocalAdapter(url, "client-1" if session else None, session)
 
     def test_trade_status_uses_local_get_with_existing_session(self):
-        FakeBisqTradeEndpoint.payload = [item()]
+        FakeBisqTradeEndpoint.payload = [item(), item("trade-2", store="CLOSED", state="BTC_CONFIRMED")]
         with patch.dict("os.environ", {"HTTP_PROXY": "http://127.0.0.1:9", "HTTPS_PROXY": "http://127.0.0.1:9"}):
             results = self.make_adapter().trade_status(OFFER)
-        self.assertEqual(results[0].trade_id, "trade-1")
+        self.assertEqual([(r.trade_id, r.store) for r in results],
+                         [("trade-1", "OPEN"), ("trade-2", "CLOSED")])
+        FakeBisqTradeEndpoint.payload = [item()]
         self.assertEqual(FakeBisqTradeEndpoint.last_path, "/api/v1/trades/status?offerId=offer-123")
         self.assertEqual(FakeBisqTradeEndpoint.last_headers["Bisq-Client-Id"], "client-1")
         self.assertEqual(FakeBisqTradeEndpoint.last_headers["Bisq-Session-Id"], "session-1")
